@@ -20,6 +20,7 @@
 		9A4C9F401F550AD9E07B4063 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81ECA3DDFA4F30D5DAFE781F /* RootView.swift */; };
 		9B91C9B41B66DEE2CBC87ED1 /* GridGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF7D2B617376BC95665F03D6 /* GridGeometry.swift */; };
 		BF31B8A7946B1B97CB940A32 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 271FE04176518291A274972F /* ContentView.swift */; };
+		C4602418C071EDF129D26B20 /* PowerUpKind.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE14E965AD6C7A29F89E21B3 /* PowerUpKind.swift */; };
 		C8EF76592B5066AF33CC1FA9 /* GridPoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93F8F26DD85B4374A0240248 /* GridPoint.swift */; };
 		D061F543206C1208C4FC7AB6 /* GameScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91B8364A15FD7652ABF60D1E /* GameScene.swift */; };
 		EA17EE0CC43EF6826C0A2CB2 /* Bomb.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D47EEAAB3A6E3F83FF8FB4C /* Bomb.swift */; };
@@ -44,7 +45,8 @@
 		D25EB0BB8104E1FED01C0AF9 /* Food.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Food.swift; sourceTree = "<group>"; };
 		D66B020A59C69AB539B00B8B /* Snake.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Snake.swift; sourceTree = "<group>"; };
 		D7D59531375B4E03F40C4591 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		F4F2F5BDBFC0007F7A22B32E /* SnakeGame.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = SnakeGame.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		DE14E965AD6C7A29F89E21B3 /* PowerUpKind.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerUpKind.swift; sourceTree = "<group>"; };
+		F4F2F5BDBFC0007F7A22B32E /* SnakeGame.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SnakeGame.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F6BF6FF662DA105D13CCAC28 /* Direction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Direction.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -60,6 +62,7 @@
 				CF7D2B617376BC95665F03D6 /* GridGeometry.swift */,
 				93F8F26DD85B4374A0240248 /* GridPoint.swift */,
 				5C6211DF059302C38DF0AEA9 /* PowerUp.swift */,
+				DE14E965AD6C7A29F89E21B3 /* PowerUpKind.swift */,
 				D66B020A59C69AB539B00B8B /* Snake.swift */,
 			);
 			path = Game;
@@ -143,8 +146,6 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
-				TargetAttributes = {
-				};
 			};
 			buildConfigurationList = 22830EE39D05F9028B4CCFF4 /* Build configuration list for PBXProject "SnakeGame" */;
 			developmentRegion = en;
@@ -193,6 +194,7 @@
 				9B91C9B41B66DEE2CBC87ED1 /* GridGeometry.swift in Sources */,
 				C8EF76592B5066AF33CC1FA9 /* GridPoint.swift in Sources */,
 				44ED3A166913C41F3C7BA93F /* PowerUp.swift in Sources */,
+				C4602418C071EDF129D26B20 /* PowerUpKind.swift in Sources */,
 				9A4C9F401F550AD9E07B4063 /* RootView.swift in Sources */,
 				02636EF7C801419CA7749241 /* Snake.swift in Sources */,
 				0758F52B01A7A8E1FC9FB8BB /* SnakeGameApp.swift in Sources */,
@@ -209,6 +211,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				DEVELOPMENT_ASSET_PATHS = SnakeGame/PreviewContent;
+				DEVELOPMENT_TEAM = 8VYCH33FGZ;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = SnakeGame/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -290,6 +293,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				DEVELOPMENT_ASSET_PATHS = SnakeGame/PreviewContent;
+				DEVELOPMENT_TEAM = 8VYCH33FGZ;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = SnakeGame/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (

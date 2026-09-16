@@ -18,6 +18,10 @@ final class Snake {
     private var segmentNodes: [SKShapeNode] = []
     private let cellSize: CGFloat
     private let origin: CGPoint
+    private let minimumLength: Int
+
+    private static let defaultBodyColor: SKColor = .systemGreen
+    private var bodyColor: SKColor = defaultBodyColor
 
     var head: GridPoint { segments[0] }
 
@@ -26,6 +30,7 @@ final class Snake {
         self.pendingDirection = direction
         self.cellSize = cellSize
         self.origin = origin
+        self.minimumLength = length
         self.segments = (0..<length).map { GridPoint(x: head.x - $0, y: head.y) }
     }
 
@@ -41,6 +46,27 @@ final class Snake {
     func turn(to newDirection: Direction) {
         guard newDirection != direction.opposite else { return }
         pendingDirection = newDirection
+    }
+
+    /// Shrinks the tail by up to `amount`, never going below the snake's
+    /// own starting length. A no-op once already at that floor.
+    func cutTail(by amount: Int) {
+        let targetCount = max(minimumLength, segments.count - amount)
+        guard targetCount < segments.count else { return }
+        segments.removeLast(segments.count - targetCount)
+        syncNodes()
+    }
+
+    /// Tints the whole snake (e.g. while a timed power-up is active).
+    /// `resetBodyColor()` returns it to normal.
+    func setBodyColor(_ color: SKColor) {
+        bodyColor = color
+        syncNodes()
+    }
+
+    func resetBodyColor() {
+        bodyColor = Snake.defaultBodyColor
+        syncNodes()
     }
 
     func advance(columns: Int, rows: Int, foodPosition: GridPoint) -> SnakeAdvanceResult {
@@ -85,7 +111,7 @@ final class Snake {
         for (index, point) in segments.enumerated() {
             let node = segmentNodes[index]
             node.position = GridGeometry.position(for: point, cellSize: cellSize, origin: origin)
-            node.fillColor = index == 0 ? .systemGreen : SKColor.systemGreen.withAlphaComponent(0.7)
+            node.fillColor = index == 0 ? bodyColor : bodyColor.withAlphaComponent(0.7)
         }
     }
 }

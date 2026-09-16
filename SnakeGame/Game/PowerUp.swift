@@ -1,21 +1,30 @@
 import SpriteKit
 
-/// A rare, independent spawn that doesn't do anything yet — just a visual
-/// placeholder (distinct color from Food) for whatever effect gets attached
-/// later. GameManager decides when to spawn/despawn it; PowerUp itself only
-/// knows its own position and node, same shape as Food.
+/// A rare, independent spawn. Comes in a few kinds (PowerUpKind), each its
+/// own color; GameManager decides when to spawn/despawn it and applies
+/// whatever effect the kind has.
 final class PowerUp {
+    let kind: PowerUpKind
     private(set) var position: GridPoint
 
     private let node: SKShapeNode
 
-    init(columns: Int, rows: Int, cellSize: CGFloat, origin: CGPoint, avoiding occupied: [GridPoint]) {
+    init(kind: PowerUpKind, columns: Int, rows: Int, cellSize: CGFloat, origin: CGPoint, avoiding occupied: [GridPoint]) {
+        self.kind = kind
         position = GridGeometry.randomPosition(columns: columns, rows: rows, avoiding: occupied)
 
+        let color = PowerUp.color(for: kind)
         node = SKShapeNode(circleOfRadius: (cellSize - 4) / 2)
-        node.fillColor = .systemYellow
-        node.strokeColor = .clear
+        node.fillColor = color
+        node.strokeColor = color
+        node.lineWidth = 1
+        node.glowWidth = 6
         node.position = GridGeometry.position(for: position, cellSize: cellSize, origin: origin)
+
+        let floatDistance = cellSize * 0.18
+        let floatUp = SKAction.moveBy(x: 0, y: floatDistance, duration: 0.7)
+        floatUp.timingMode = .easeInEaseOut
+        node.run(.repeatForever(.sequence([floatUp, floatUp.reversed()])))
     }
 
     func addToScene(_ scene: SKScene) {
@@ -24,5 +33,15 @@ final class PowerUp {
 
     func removeFromScene() {
         node.removeFromParent()
+    }
+
+    /// Not private: GameManager reuses this to tint the snake to match
+    /// while a bomb-eater is active, instead of duplicating the palette.
+    static func color(for kind: PowerUpKind) -> SKColor {
+        switch kind {
+        case .bombEater: return .systemPurple
+        case .tailCutter: return .systemYellow
+        case .speedCooler: return .systemCyan
+        }
     }
 }
