@@ -1,0 +1,27 @@
+name: SnakeGame
+options:
+  bundleIdPrefix: com.fedxemilio
+  deploymentTarget:
+    iOS: "17.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+targets:
+  SnakeGame:
+    type: application
+    platform: iOS
+    sources:
+      - path: SnakeGame
+    info:
+      path: SnakeGame/Info.plist
+      properties:
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.fedxemilio.SnakeGame
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        DEVELOPMENT_ASSET_PATHS: "SnakeGame/PreviewContent"
+        ENABLE_PREVIEWS: YES
+        TARGETED_DEVICE_FAMILY: "1"
