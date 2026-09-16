@@ -23,6 +23,10 @@ final class GameManager {
     /// Chance, per fruit eaten, that a bomb spawns alongside the next fruit.
     private let bombSpawnChance: Double = 3.0 / 20.0
 
+    /// How many segments a tail-cutter power-up removes (never below the
+    /// snake's starting length -- Snake enforces that floor itself).
+    private let tailCutterAmount = 5
+
     private var moveInterval: TimeInterval = 0.18
     private var timeSinceLastMove: TimeInterval = 0
     private var lastUpdateTime: TimeInterval = 0
@@ -110,6 +114,7 @@ final class GameManager {
         }
 
         if let powerUp, powerUp.position == snake.head {
+            applyPowerUpEffect(powerUp.kind)
             powerUp.removeFromScene()
             self.powerUp = nil
         }
@@ -146,10 +151,22 @@ final class GameManager {
 
         var occupied = snake.segments
         occupied.append(food.position)
-        let newPowerUp = PowerUp(columns: columns, rows: rows, cellSize: cellSize, origin: origin, avoiding: occupied)
+        let kind = PowerUpKind.allCases.randomElement()!
+        let newPowerUp = PowerUp(kind: kind, columns: columns, rows: rows, cellSize: cellSize, origin: origin, avoiding: occupied)
         if let scene {
             newPowerUp.addToScene(scene)
         }
         powerUp = newPowerUp
+    }
+
+    /// Only .tailCutter does anything so far -- .bombEater and .speedCooler
+    /// spawn and render with their own color but have no effect yet.
+    private func applyPowerUpEffect(_ kind: PowerUpKind) {
+        switch kind {
+        case .tailCutter:
+            snake.cutTail(by: tailCutterAmount)
+        case .bombEater, .speedCooler:
+            break
+        }
     }
 }
