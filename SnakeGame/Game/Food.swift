@@ -11,7 +11,7 @@ final class Food {
     init(columns: Int, rows: Int, cellSize: CGFloat, origin: CGPoint, avoiding occupied: [GridPoint]) {
         self.cellSize = cellSize
         self.origin = origin
-        self.position = Food.randomPosition(columns: columns, rows: rows, avoiding: occupied)
+        self.position = GridGeometry.randomPosition(columns: columns, rows: rows, avoiding: occupied)
 
         node = SKShapeNode(circleOfRadius: (cellSize - 4) / 2)
         node.fillColor = .systemRed
@@ -28,15 +28,7 @@ final class Food {
     }
 
     func relocate(columns: Int, rows: Int, avoiding occupied: [GridPoint]) {
-        position = Food.randomPosition(columns: columns, rows: rows, avoiding: occupied)
+        position = GridGeometry.randomPosition(columns: columns, rows: rows, avoiding: occupied)
         node.position = GridGeometry.position(for: position, cellSize: cellSize, origin: origin)
-    }
-
-    private static func randomPosition(columns: Int, rows: Int, avoiding occupied: [GridPoint]) -> GridPoint {
-        var candidate: GridPoint
-        repeat {
-            candidate = GridPoint(x: Int.random(in: 0..<columns), y: Int.random(in: 0..<rows))
-        } while occupied.contains(candidate)
-        return candidate
     }
 }

@@ -29,12 +29,28 @@ final class GameScene: SKScene {
             self?.showGameOver()
         }
 
+        drawGridBorder(cellSize: cellSize, origin: origin)
         setUpScoreLabel()
         setUpSwipeGestures(on: view)
         gameManager.startNewGame()
     }
 
     // MARK: - Setup
+
+    private func drawGridBorder(cellSize: CGFloat, origin: CGPoint) {
+        let rect = CGRect(
+            x: origin.x,
+            y: origin.y,
+            width: CGFloat(columns) * cellSize,
+            height: CGFloat(rows) * cellSize
+        )
+        let border = SKShapeNode(rect: rect)
+        border.strokeColor = SKColor.white.withAlphaComponent(0.25)
+        border.lineWidth = 2
+        border.fillColor = .clear
+        border.zPosition = -1
+        addChild(border)
+    }
 
     private func setUpScoreLabel() {
         scoreLabel = SKLabelNode(fontNamed: "Menlo-Bold")

@@ -12,6 +12,12 @@ final class GameManager {
     private weak var scene: SKScene?
     private var snake: Snake!
     private var food: Food!
+    private var powerUp: PowerUp?
+
+    /// Chance, per grid tick, of a power-up spawning while none is active.
+    /// At the starting move speed (~5.5 ticks/sec) this averages roughly
+    /// one spawn every 30 seconds. Tune this to taste.
+    private let powerUpSpawnChance: Double = 0.006
 
     private var moveInterval: TimeInterval = 0.18
     private var timeSinceLastMove: TimeInterval = 0
@@ -34,6 +40,8 @@ final class GameManager {
     func startNewGame() {
         snake?.removeFromScene()
         food?.removeFromScene()
+        powerUp?.removeFromScene()
+        powerUp = nil
 
         isGameOver = false
         score = 0
@@ -88,6 +96,31 @@ final class GameManager {
         case .collided:
             isGameOver = true
             onGameOver?()
+            return
         }
+
+        if let powerUp, powerUp.position == snake.head {
+            powerUp.removeFromScene()
+            self.powerUp = nil
+        }
+
+        attemptPowerUpSpawn()
+    }
+
+    /// Rolls independently of whether one is already active — if it hits
+    /// while a power-up is on the grid, the old one is replaced rather than
+    /// stacking or being skipped.
+    private func attemptPowerUpSpawn() {
+        guard Double.random(in: 0..<1) < powerUpSpawnChance else { return }
+
+        powerUp?.removeFromScene()
+
+        var occupied = snake.segments
+        occupied.append(food.position)
+        let newPowerUp = PowerUp(columns: columns, rows: rows, cellSize: cellSize, origin: origin, avoiding: occupied)
+        if let scene {
+            newPowerUp.addToScene(scene)
+        }
+        powerUp = newPowerUp
     }
 }
