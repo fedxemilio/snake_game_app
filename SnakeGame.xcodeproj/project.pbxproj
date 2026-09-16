@@ -10,11 +10,13 @@
 		02636EF7C801419CA7749241 /* Snake.swift in Sources */ = {isa = PBXBuildFile; fileRef = D66B020A59C69AB539B00B8B /* Snake.swift */; };
 		0758F52B01A7A8E1FC9FB8BB /* SnakeGameApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9624589B2F093F54407B2D11 /* SnakeGameApp.swift */; };
 		0A121E2BC9576196A9C1FD58 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D7D59531375B4E03F40C4591 /* Assets.xcassets */; };
+		1B868009553918F2F0B35538 /* StartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5009AAA1C9BD88F522CC11C7 /* StartView.swift */; };
 		1C79C708AC7EC0B0630AF1A2 /* PreviewAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B63AF8602C611D2D8F8DA1C0 /* PreviewAssets.xcassets */; };
 		31305BDFA645E5C068629796 /* GameManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F6F13BB9D12F173D73CB58E /* GameManager.swift */; };
 		31C4EEFCC776D3DB49A8C3AF /* Food.swift in Sources */ = {isa = PBXBuildFile; fileRef = D25EB0BB8104E1FED01C0AF9 /* Food.swift */; };
 		44ED3A166913C41F3C7BA93F /* PowerUp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C6211DF059302C38DF0AEA9 /* PowerUp.swift */; };
 		84CA53CD4CC114FEDA13E903 /* Direction.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6BF6FF662DA105D13CCAC28 /* Direction.swift */; };
+		9A4C9F401F550AD9E07B4063 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81ECA3DDFA4F30D5DAFE781F /* RootView.swift */; };
 		9B91C9B41B66DEE2CBC87ED1 /* GridGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF7D2B617376BC95665F03D6 /* GridGeometry.swift */; };
 		BF31B8A7946B1B97CB940A32 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 271FE04176518291A274972F /* ContentView.swift */; };
 		C8EF76592B5066AF33CC1FA9 /* GridPoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93F8F26DD85B4374A0240248 /* GridPoint.swift */; };
@@ -25,7 +27,9 @@
 		01B42283B3B95CA2DB07B1FB /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		1F6F13BB9D12F173D73CB58E /* GameManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameManager.swift; sourceTree = "<group>"; };
 		271FE04176518291A274972F /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		5009AAA1C9BD88F522CC11C7 /* StartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartView.swift; sourceTree = "<group>"; };
 		5C6211DF059302C38DF0AEA9 /* PowerUp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerUp.swift; sourceTree = "<group>"; };
+		81ECA3DDFA4F30D5DAFE781F /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		91B8364A15FD7652ABF60D1E /* GameScene.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameScene.swift; sourceTree = "<group>"; };
 		93F8F26DD85B4374A0240248 /* GridPoint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridPoint.swift; sourceTree = "<group>"; };
 		9624589B2F093F54407B2D11 /* SnakeGameApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnakeGameApp.swift; sourceTree = "<group>"; };
@@ -34,7 +38,7 @@
 		D25EB0BB8104E1FED01C0AF9 /* Food.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Food.swift; sourceTree = "<group>"; };
 		D66B020A59C69AB539B00B8B /* Snake.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Snake.swift; sourceTree = "<group>"; };
 		D7D59531375B4E03F40C4591 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		F4F2F5BDBFC0007F7A22B32E /* SnakeGame.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = SnakeGame.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F4F2F5BDBFC0007F7A22B32E /* SnakeGame.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SnakeGame.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F6BF6FF662DA105D13CCAC28 /* Direction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Direction.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -82,7 +86,9 @@
 			isa = PBXGroup;
 			children = (
 				271FE04176518291A274972F /* ContentView.swift */,
+				81ECA3DDFA4F30D5DAFE781F /* RootView.swift */,
 				9624589B2F093F54407B2D11 /* SnakeGameApp.swift */,
+				5009AAA1C9BD88F522CC11C7 /* StartView.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -128,8 +134,6 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
-				TargetAttributes = {
-				};
 			};
 			buildConfigurationList = 22830EE39D05F9028B4CCFF4 /* Build configuration list for PBXProject "SnakeGame" */;
 			developmentRegion = en;
@@ -175,8 +179,10 @@
 				9B91C9B41B66DEE2CBC87ED1 /* GridGeometry.swift in Sources */,
 				C8EF76592B5066AF33CC1FA9 /* GridPoint.swift in Sources */,
 				44ED3A166913C41F3C7BA93F /* PowerUp.swift in Sources */,
+				9A4C9F401F550AD9E07B4063 /* RootView.swift in Sources */,
 				02636EF7C801419CA7749241 /* Snake.swift in Sources */,
 				0758F52B01A7A8E1FC9FB8BB /* SnakeGameApp.swift in Sources */,
+				1B868009553918F2F0B35538 /* StartView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -189,6 +195,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				DEVELOPMENT_ASSET_PATHS = SnakeGame/PreviewContent;
+				DEVELOPMENT_TEAM = 8VYCH33FGZ;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = SnakeGame/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -270,6 +277,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				DEVELOPMENT_ASSET_PATHS = SnakeGame/PreviewContent;
+				DEVELOPMENT_TEAM = 8VYCH33FGZ;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = SnakeGame/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
