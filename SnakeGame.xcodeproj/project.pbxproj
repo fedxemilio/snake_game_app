@@ -19,12 +19,14 @@
 		BF31B8A7946B1B97CB940A32 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 271FE04176518291A274972F /* ContentView.swift */; };
 		C8EF76592B5066AF33CC1FA9 /* GridPoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93F8F26DD85B4374A0240248 /* GridPoint.swift */; };
 		D061F543206C1208C4FC7AB6 /* GameScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91B8364A15FD7652ABF60D1E /* GameScene.swift */; };
+		EA17EE0CC43EF6826C0A2CB2 /* Bomb.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D47EEAAB3A6E3F83FF8FB4C /* Bomb.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		01B42283B3B95CA2DB07B1FB /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		1F6F13BB9D12F173D73CB58E /* GameManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameManager.swift; sourceTree = "<group>"; };
 		271FE04176518291A274972F /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		2D47EEAAB3A6E3F83FF8FB4C /* Bomb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bomb.swift; sourceTree = "<group>"; };
 		5C6211DF059302C38DF0AEA9 /* PowerUp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerUp.swift; sourceTree = "<group>"; };
 		91B8364A15FD7652ABF60D1E /* GameScene.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameScene.swift; sourceTree = "<group>"; };
 		93F8F26DD85B4374A0240248 /* GridPoint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridPoint.swift; sourceTree = "<group>"; };
@@ -34,7 +36,7 @@
 		D25EB0BB8104E1FED01C0AF9 /* Food.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Food.swift; sourceTree = "<group>"; };
 		D66B020A59C69AB539B00B8B /* Snake.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Snake.swift; sourceTree = "<group>"; };
 		D7D59531375B4E03F40C4591 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		F4F2F5BDBFC0007F7A22B32E /* SnakeGame.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = SnakeGame.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F4F2F5BDBFC0007F7A22B32E /* SnakeGame.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SnakeGame.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F6BF6FF662DA105D13CCAC28 /* Direction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Direction.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -42,6 +44,7 @@
 		171D8335D0660DFF7BC6A9C8 /* Game */ = {
 			isa = PBXGroup;
 			children = (
+				2D47EEAAB3A6E3F83FF8FB4C /* Bomb.swift */,
 				F6BF6FF662DA105D13CCAC28 /* Direction.swift */,
 				D25EB0BB8104E1FED01C0AF9 /* Food.swift */,
 				1F6F13BB9D12F173D73CB58E /* GameManager.swift */,
@@ -128,8 +131,6 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
-				TargetAttributes = {
-				};
 			};
 			buildConfigurationList = 22830EE39D05F9028B4CCFF4 /* Build configuration list for PBXProject "SnakeGame" */;
 			developmentRegion = en;
@@ -167,6 +168,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				EA17EE0CC43EF6826C0A2CB2 /* Bomb.swift in Sources */,
 				BF31B8A7946B1B97CB940A32 /* ContentView.swift in Sources */,
 				84CA53CD4CC114FEDA13E903 /* Direction.swift in Sources */,
 				31C4EEFCC776D3DB49A8C3AF /* Food.swift in Sources */,
@@ -189,6 +191,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				DEVELOPMENT_ASSET_PATHS = SnakeGame/PreviewContent;
+				DEVELOPMENT_TEAM = 8VYCH33FGZ;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = SnakeGame/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -270,6 +273,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				DEVELOPMENT_ASSET_PATHS = SnakeGame/PreviewContent;
+				DEVELOPMENT_TEAM = 8VYCH33FGZ;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = SnakeGame/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (

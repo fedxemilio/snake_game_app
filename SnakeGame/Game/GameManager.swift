@@ -13,11 +13,15 @@ final class GameManager {
     private var snake: Snake!
     private var food: Food!
     private var powerUp: PowerUp?
+    private var bombs: [Bomb] = []
 
     /// Chance, per grid tick, of a power-up spawning while none is active.
     /// At the starting move speed (~5.5 ticks/sec) this averages roughly
     /// one spawn every 30 seconds. Tune this to taste.
     private let powerUpSpawnChance: Double = 0.006
+
+    /// Chance, per fruit eaten, that a bomb spawns alongside the next fruit.
+    private let bombSpawnChance: Double = 3.0 / 20.0
 
     private var moveInterval: TimeInterval = 0.18
     private var timeSinceLastMove: TimeInterval = 0
@@ -42,6 +46,8 @@ final class GameManager {
         food?.removeFromScene()
         powerUp?.removeFromScene()
         powerUp = nil
+        bombs.forEach { $0.removeFromScene() }
+        bombs.removeAll()
 
         isGameOver = false
         score = 0
@@ -93,7 +99,14 @@ final class GameManager {
             onScoreChanged?(score)
             food.relocate(columns: columns, rows: rows, avoiding: snake.segments)
             moveInterval = max(0.08, moveInterval - 0.004)
+            attemptBombSpawn()
         case .collided:
+            isGameOver = true
+            onGameOver?()
+            return
+        }
+
+        if bombs.contains(where: { $0.position == snake.head }) {
             isGameOver = true
             onGameOver?()
             return
@@ -105,6 +118,25 @@ final class GameManager {
         }
 
         attemptPowerUpSpawn()
+    }
+
+    /// Rolls once per fruit eaten, alongside that fruit's replacement — never
+    /// on an independent timer, so there's no bomb at game start and no
+    /// bombs appearing while just cruising for fruit. Bombs accumulate and
+    /// never expire, and are allowed to land on each other (but never on the
+    /// fruit that was just placed, or on the snake).
+    private func attemptBombSpawn() {
+        guard Double.random(in: 0..<1) < bombSpawnChance else { return }
+
+        var occupied = snake.segments
+        occupied.append(food.position)
+        let position = GridGeometry.randomPosition(columns: columns, rows: rows, avoiding: occupied)
+
+        let bomb = Bomb(position: position, cellSize: cellSize, origin: origin)
+        if let scene {
+            bomb.addToScene(scene)
+        }
+        bombs.append(bomb)
     }
 
     /// Rolls independently of whether one is already active — if it hits
