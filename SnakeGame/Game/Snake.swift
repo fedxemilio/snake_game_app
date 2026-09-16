@@ -20,6 +20,9 @@ final class Snake {
     private let origin: CGPoint
     private let minimumLength: Int
 
+    private static let defaultBodyColor: SKColor = .systemGreen
+    private var bodyColor: SKColor = defaultBodyColor
+
     var head: GridPoint { segments[0] }
 
     init(startingAt head: GridPoint, length: Int, direction: Direction, cellSize: CGFloat, origin: CGPoint) {
@@ -51,6 +54,18 @@ final class Snake {
         let targetCount = max(minimumLength, segments.count - amount)
         guard targetCount < segments.count else { return }
         segments.removeLast(segments.count - targetCount)
+        syncNodes()
+    }
+
+    /// Tints the whole snake (e.g. while a timed power-up is active).
+    /// `resetBodyColor()` returns it to normal.
+    func setBodyColor(_ color: SKColor) {
+        bodyColor = color
+        syncNodes()
+    }
+
+    func resetBodyColor() {
+        bodyColor = Snake.defaultBodyColor
         syncNodes()
     }
 
@@ -96,7 +111,7 @@ final class Snake {
         for (index, point) in segments.enumerated() {
             let node = segmentNodes[index]
             node.position = GridGeometry.position(for: point, cellSize: cellSize, origin: origin)
-            node.fillColor = index == 0 ? .systemGreen : SKColor.systemGreen.withAlphaComponent(0.7)
+            node.fillColor = index == 0 ? bodyColor : bodyColor.withAlphaComponent(0.7)
         }
     }
 }

@@ -27,7 +27,22 @@ final class GameManager {
     /// snake's starting length -- Snake enforces that floor itself).
     private let tailCutterAmount = 5
 
-    private var moveInterval: TimeInterval = 0.18
+    /// The move speed a run starts at, and the slowest a speed-cooler is
+    /// allowed to push things back to -- it undoes fruit-driven speed-up,
+    /// it doesn't make the game slower than when you started.
+    private let startingMoveInterval: TimeInterval = 0.18
+
+    /// How much slower a speed-cooler makes each move, undoing roughly half
+    /// the full fruit-driven speed-up range in one hit.
+    private let speedCoolerSlowdown: TimeInterval = 0.05
+
+    /// How long a bomb-eater's immunity lasts, in real seconds (independent
+    /// of move speed -- ticked down every frame, not every grid move).
+    private let bombEaterDuration: TimeInterval = 5.0
+    private var isBombEaterActive = false
+    private var bombEaterTimeRemaining: TimeInterval = 0
+
+    private var moveInterval: TimeInterval = 0
     private var timeSinceLastMove: TimeInterval = 0
     private var lastUpdateTime: TimeInterval = 0
 
@@ -55,9 +70,11 @@ final class GameManager {
 
         isGameOver = false
         score = 0
-        moveInterval = 0.18
+        moveInterval = startingMoveInterval
         timeSinceLastMove = 0
         lastUpdateTime = 0
+        isBombEaterActive = false
+        bombEaterTimeRemaining = 0
 
         let start = GridPoint(x: columns / 2, y: rows / 2)
         let newSnake = Snake(startingAt: start, length: 3, direction: .right, cellSize: cellSize, origin: origin)
@@ -87,8 +104,10 @@ final class GameManager {
         }
         let delta = currentTime - lastUpdateTime
         lastUpdateTime = currentTime
-        timeSinceLastMove += delta
 
+        updateBombEaterTimer(delta: delta)
+
+        timeSinceLastMove += delta
         guard timeSinceLastMove >= moveInterval else { return }
         timeSinceLastMove = 0
 
@@ -107,19 +126,38 @@ final class GameManager {
             return
         }
 
-        if bombs.contains(where: { $0.position == snake.head }) {
-            isGameOver = true
-            onGameOver?()
-            return
-        }
-
+        // Resolve the power-up before the bomb: picking up a bomb-eater and
+        // stepping onto a bomb in the same tick should grant immunity for
+        // that same collision, not kill the run a moment too early.
         if let powerUp, powerUp.position == snake.head {
             applyPowerUpEffect(powerUp.kind)
             powerUp.removeFromScene()
             self.powerUp = nil
         }
 
+        let bombsAtHead = bombs.filter { $0.position == snake.head }
+        if !bombsAtHead.isEmpty {
+            if isBombEaterActive {
+                bombsAtHead.forEach { $0.removeFromScene() }
+                bombs.removeAll { $0.position == snake.head }
+            } else {
+                isGameOver = true
+                onGameOver?()
+                return
+            }
+        }
+
         attemptPowerUpSpawn()
+    }
+
+    private func updateBombEaterTimer(delta: TimeInterval) {
+        guard isBombEaterActive else { return }
+        bombEaterTimeRemaining -= delta
+        if bombEaterTimeRemaining <= 0 {
+            isBombEaterActive = false
+            bombEaterTimeRemaining = 0
+            snake.resetBodyColor()
+        }
     }
 
     /// Rolls once per fruit eaten, alongside that fruit's replacement — never
@@ -159,14 +197,22 @@ final class GameManager {
         powerUp = newPowerUp
     }
 
-    /// Only .tailCutter does anything so far -- .bombEater and .speedCooler
-    /// spawn and render with their own color but have no effect yet.
     private func applyPowerUpEffect(_ kind: PowerUpKind) {
         switch kind {
         case .tailCutter:
             snake.cutTail(by: tailCutterAmount)
-        case .bombEater, .speedCooler:
-            break
+        case .speedCooler:
+            moveInterval = min(startingMoveInterval, moveInterval + speedCoolerSlowdown)
+        case .bombEater:
+            activateBombEater()
         }
+    }
+
+    /// Re-collecting one while already active simply refreshes the timer
+    /// back to the full duration, rather than stacking.
+    private func activateBombEater() {
+        isBombEaterActive = true
+        bombEaterTimeRemaining = bombEaterDuration
+        snake.setBodyColor(PowerUp.color(for: .bombEater))
     }
 }
