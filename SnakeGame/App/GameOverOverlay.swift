@@ -6,7 +6,7 @@ struct GameOverOverlay: View {
 
     var body: some View {
         ZStack {
-            Color.white.opacity(0.94)
+            Color.black.opacity(0.6)
                 .ignoresSafeArea()
 
             VStack {
@@ -39,10 +39,10 @@ private struct GlowButton: View {
         Button(action: action) {
             Text(title)
                 .font(.system(size: diameter * 0.16, weight: .semibold, design: .rounded))
-                .foregroundStyle(.white)
+                .foregroundStyle(color)
                 .multilineTextAlignment(.center)
                 .frame(width: diameter, height: diameter)
-                .background(Circle().fill(color))
+                .background(Circle().strokeBorder(color, lineWidth: 4))
                 .shadow(color: color, radius: 12)
                 .shadow(color: color.opacity(0.7), radius: 24)
         }

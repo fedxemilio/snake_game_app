@@ -14,7 +14,7 @@ final class GameScene: SKScene {
     var onGameOver: (() -> Void)?
 
     override func didMove(to view: SKView) {
-        backgroundColor = SKColor(red: 0.09, green: 0.10, blue: 0.14, alpha: 1)
+        backgroundColor = SKColor(red: 0.03, green: 0.09, blue: 0.22, alpha: 1)
 
         let cellWidth = size.width / CGFloat(columns)
         let cellHeight = size.height / CGFloat(rows)
