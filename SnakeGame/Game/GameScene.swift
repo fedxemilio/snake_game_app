@@ -6,12 +6,15 @@ final class GameScene: SKScene {
 
     private var gameManager: GameManager!
     private var scoreLabel: SKLabelNode!
-    private var gameOverLabel: SKLabelNode?
 
     private var swipeDirections: [ObjectIdentifier: Direction] = [:]
 
+    /// Fired once, when a run ends. The Game Over UI itself lives in
+    /// SwiftUI (GameOverOverlay), not in the scene.
+    var onGameOver: (() -> Void)?
+
     override func didMove(to view: SKView) {
-        backgroundColor = SKColor(red: 0.09, green: 0.10, blue: 0.14, alpha: 1)
+        backgroundColor = SKColor(red: 0.03, green: 0.09, blue: 0.22, alpha: 1)
 
         let cellWidth = size.width / CGFloat(columns)
         let cellHeight = size.height / CGFloat(rows)
@@ -26,12 +29,17 @@ final class GameScene: SKScene {
             self?.scoreLabel.text = "Score: \(score)"
         }
         gameManager.onGameOver = { [weak self] in
-            self?.showGameOver()
+            self?.onGameOver?()
         }
 
         drawGridBorder(cellSize: cellSize, origin: origin)
         setUpScoreLabel()
         setUpSwipeGestures(on: view)
+        gameManager.startNewGame()
+    }
+
+    /// Called from the Game Over overlay's Play Again button.
+    func startNewGame() {
         gameManager.startNewGame()
     }
 
@@ -78,11 +86,6 @@ final class GameScene: SKScene {
 
     @objc private func handleSwipe(_ recognizer: UISwipeGestureRecognizer) {
         guard let direction = swipeDirections[ObjectIdentifier(recognizer)] else { return }
-
-        if gameManager.isGameOver {
-            gameOverLabel?.removeFromParent()
-            gameOverLabel = nil
-        }
         gameManager.turn(to: direction)
     }
 
@@ -90,18 +93,5 @@ final class GameScene: SKScene {
 
     override func update(_ currentTime: TimeInterval) {
         gameManager.tick(currentTime: currentTime)
-    }
-
-    // MARK: - UI
-
-    private func showGameOver() {
-        let label = SKLabelNode(fontNamed: "Menlo-Bold")
-        label.text = "Game Over — swipe to restart"
-        label.fontSize = 18
-        label.fontColor = .white
-        label.position = CGPoint(x: size.width / 2, y: size.height / 2)
-        label.zPosition = 20
-        addChild(label)
-        gameOverLabel = label
     }
 }

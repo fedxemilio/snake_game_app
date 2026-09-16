@@ -71,10 +71,7 @@ final class GameManager {
     }
 
     func turn(to direction: Direction) {
-        if isGameOver {
-            startNewGame()
-            return
-        }
+        guard !isGameOver else { return }
         snake.turn(to: direction)
     }
 

@@ -4,7 +4,7 @@ import SwiftUI
 struct SnakeGameApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            RootView()
         }
     }
 }
