@@ -40,6 +40,19 @@ final class GameManager {
     /// Chance, per fruit eaten, that a bomb spawns alongside the next fruit.
     private let bombSpawnChance: Double = 3.0 / 20.0
 
+    /// Relative odds of each BombKind on a spawn -- weights need not sum to
+    /// 1; `randomBombKind()` normalizes. `.timed`/`.drifter` are shelved at 0
+    /// for now (mine + the new `.sensor` are the only two live kinds while
+    /// sensor gets hands-on testing); `.sensor` is deliberately overweighted
+    /// at 50% for that, and should drop to ~20% (`.mine` picking up the rest)
+    /// once it's confirmed working.
+    private static let bombKindWeights: [(BombKind, Double)] = [
+        (.mine, 0.5),
+        (.timed, 0.0),
+        (.drifter, 0.0),
+        (.sensor, 0.5)
+    ]
+
     /// How many tail segments a tail-cutter removes -- one per flash, up
     /// to this many, stopping early once the snake reaches its minimum
     /// length (Snake enforces that floor itself).
@@ -165,6 +178,8 @@ final class GameManager {
         lastUpdateTime = currentTime
 
         updateBombEaterTimer(delta: delta)
+        updateBombs(delta: delta)
+        guard !isGameOver else { return }
 
         timeSinceLastMove += delta
         guard timeSinceLastMove >= moveInterval else { return }
@@ -195,6 +210,8 @@ final class GameManager {
             onGameOver?()
             return
         }
+
+        armSensorBombsNearHead()
 
         // Resolve the power-up before the bomb: picking up a bomb-eater and
         // stepping onto a bomb in the same tick should grant immunity for
@@ -289,9 +306,11 @@ final class GameManager {
 
     /// Rolls once per fruit eaten, alongside that fruit's replacement — never
     /// on an independent timer, so there's no bomb at game start and no
-    /// bombs appearing while just cruising for fruit. Bombs accumulate and
-    /// never expire, and are allowed to land on each other (but never on the
-    /// fruit that was just placed, or on the snake).
+    /// bombs appearing while just cruising for fruit. Bombs are allowed to
+    /// land on each other (but never on the fruit that was just placed, or
+    /// on the snake). Most bombs (`.mine`) still accumulate and never expire
+    /// on their own; `.timed` and `.drifter` are the exceptions (see
+    /// `BombKind`), swept or repositioned by `updateBombs(delta:)`.
     private func attemptBombSpawn() {
         guard Double.random(in: 0..<1) < bombSpawnChance else { return }
 
@@ -299,11 +318,108 @@ final class GameManager {
         occupied.append(food.position)
         let position = GridGeometry.randomPosition(columns: columns, rows: rows, avoiding: occupied)
 
-        let bomb = Bomb(position: position, cellSize: cellSize, origin: origin)
+        let bomb = Bomb(kind: randomBombKind(), position: position, cellSize: cellSize, origin: origin)
         if let scene {
             bomb.addToScene(scene)
         }
         bombs.append(bomb)
+    }
+
+    private func randomBombKind() -> BombKind {
+        let totalWeight = GameManager.bombKindWeights.reduce(0) { $0 + $1.1 }
+        var roll = Double.random(in: 0..<totalWeight)
+        for (kind, weight) in GameManager.bombKindWeights {
+            if roll < weight { return kind }
+            roll -= weight
+        }
+        return .mine
+    }
+
+    /// Ticks every bomb's own fuse/movement by real elapsed time --
+    /// unconditional every frame, like the bomb-eater timer, so `.timed`'s
+    /// fuse, `.drifter`'s roaming, and an armed `.sensor`'s countdown don't
+    /// speed up or slow down with the snake's own move interval. Runs before
+    /// the snake-vs-bomb collision check later this tick, so a drifter that
+    /// just moved onto the head (or a mine the head just moved onto) is
+    /// still caught the same tick.
+    ///
+    /// A sensor's detonation is resolved *before* the generic expired-bomb
+    /// sweep below, while `bombs` still holds every other bomb to check its
+    /// vicinity against -- `resolveSensorDetonation(at:)` may itself end the
+    /// game, in which case this bails immediately rather than continuing to
+    /// process other bombs against state that no longer matters.
+    private func updateBombs(delta: TimeInterval) {
+        var occupied = occupiedBySnakeAndWalls
+        occupied.append(food.position)
+        for bomb in bombs {
+            bomb.update(delta: delta, columns: columns, rows: rows, avoiding: occupied)
+        }
+
+        for sensor in bombs where sensor.kind == .sensor && sensor.isExpired {
+            resolveSensorDetonation(at: sensor.position)
+            guard !isGameOver else { return }
+        }
+
+        let expired = bombs.filter(\.isExpired)
+        guard !expired.isEmpty else { return }
+        expired.forEach { $0.removeFromScene() }
+        bombs.removeAll(where: \.isExpired)
+    }
+
+    /// An armed `.sensor` bomb's fuse just ran out. "Vicinity" is the 8
+    /// cells surrounding `position` -- never `position` itself, since
+    /// stepping directly onto any bomb is already caught unconditionally by
+    /// the bomb-contact check later this tick. Bomb-eater immunity already
+    /// protects direct contact with any bomb, so it's extended here too --
+    /// otherwise "immune to bombs" would quietly mean "immune to touching
+    /// one," which isn't what picking it up promises.
+    ///
+    /// Removing nearby mines and arming nearby sensors happen regardless of
+    /// immunity -- those are consequences for the *world*, not the player,
+    /// so being immune doesn't stop a chain reaction from playing out.
+    private func resolveSensorDetonation(at position: GridPoint) {
+        let vicinity = GameManager.vicinity(of: position, columns: columns, rows: rows)
+
+        if !isBombEaterActive && vicinity.contains(snake.head) {
+            isGameOver = true
+            onGameOver?()
+            return
+        }
+
+        let minesToRemove = bombs.filter { $0.kind == .mine && vicinity.contains($0.position) }
+        minesToRemove.forEach { $0.removeFromScene() }
+        bombs.removeAll { $0.kind == .mine && vicinity.contains($0.position) }
+
+        for other in bombs where other.kind == .sensor && vicinity.contains(other.position) {
+            other.arm()
+        }
+    }
+
+    /// A dormant `.sensor` bomb arms the instant the snake's head enters any
+    /// of its 8 surrounding cells. `Bomb.arm()` is a no-op for anything
+    /// already armed (or not a sensor), so this can run unconditionally
+    /// every tick without tracking which bombs it's already touched.
+    private func armSensorBombsNearHead() {
+        for bomb in bombs where bomb.kind == .sensor {
+            if GameManager.vicinity(of: bomb.position, columns: columns, rows: rows).contains(snake.head) {
+                bomb.arm()
+            }
+        }
+    }
+
+    /// The 8 cells surrounding `position`, wrapping at the grid's edges the
+    /// same way movement does -- never `position` itself.
+    private static func vicinity(of position: GridPoint, columns: Int, rows: Int) -> [GridPoint] {
+        var cells: [GridPoint] = []
+        for dx in -1...1 {
+            for dy in -1...1 {
+                guard dx != 0 || dy != 0 else { continue }
+                let x = (position.x + dx + columns) % columns
+                let y = (position.y + dy + rows) % rows
+                cells.append(GridPoint(x: x, y: y))
+            }
+        }
+        return cells
     }
 
     /// Rolls independently of whether one is already active — if it hits
