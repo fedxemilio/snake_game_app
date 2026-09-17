@@ -116,8 +116,17 @@ final class GameManager {
         }
         snake = newSnake
 
-        if mode == .levels {
+        switch mode {
+        case .levels:
             loadCurrentLevelWalls()
+        case .adventure:
+            let newWalls = Walls(positions: AdventureMap.walls, cellSize: cellSize, origin: origin)
+            if let scene {
+                newWalls.addToScene(scene)
+            }
+            walls = newWalls
+        case .freePlay:
+            break
         }
 
         let newFood = Food(columns: columns, rows: rows, cellSize: cellSize, origin: origin, avoiding: occupiedBySnakeAndWalls)
@@ -133,6 +142,12 @@ final class GameManager {
     /// baseline every spawn/relocate call should avoid landing on.
     private var occupiedBySnakeAndWalls: [GridPoint] {
         snake.segments + Array(walls?.positions ?? [])
+    }
+
+    /// World-space position of the snake's head -- GameScene uses this to
+    /// drive Adventure mode's camera. Meaningless (but harmless) elsewhere.
+    var headWorldPosition: CGPoint {
+        GridGeometry.position(for: snake.head, cellSize: cellSize, origin: origin)
     }
 
     func turn(to direction: Direction) {
