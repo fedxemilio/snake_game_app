@@ -155,7 +155,7 @@ final class GameManager {
         guard timeSinceLastMove >= moveInterval else { return }
         timeSinceLastMove = 0
 
-        switch snake.advance(columns: columns, rows: rows, foodPosition: food.position) {
+        switch snake.advance(columns: columns, rows: rows, foodPosition: food.position, halvedGrowth: mode == .levels) {
         case .moved:
             break
         case .ateFood:
