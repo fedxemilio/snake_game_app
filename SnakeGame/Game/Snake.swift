@@ -31,7 +31,22 @@ final class Snake {
         self.cellSize = cellSize
         self.origin = origin
         self.minimumLength = length
-        self.segments = (0..<length).map { GridPoint(x: head.x - $0, y: head.y) }
+        self.segments = Snake.horizontalSegments(head: head, length: length)
+    }
+
+    private static func horizontalSegments(head: GridPoint, length: Int) -> [GridPoint] {
+        (0..<length).map { GridPoint(x: head.x - $0, y: head.y) }
+    }
+
+    /// Repositions the snake to a fresh horizontal line at `head`, keeping
+    /// its current length -- used between levels so a run's progress (and
+    /// score) carries over, but a stale position can't land inside a
+    /// freshly-loaded level's walls.
+    func recenter(at head: GridPoint, direction: Direction) {
+        self.direction = direction
+        self.pendingDirection = direction
+        segments = Snake.horizontalSegments(head: head, length: segments.count)
+        syncNodes()
     }
 
     func addToScene(_ scene: SKScene) {
