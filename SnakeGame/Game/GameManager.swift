@@ -9,11 +9,28 @@ final class GameManager {
     private let cellSize: CGFloat
     private let origin: CGPoint
 
+    private let mode: GameMode
+
     private weak var scene: SKScene?
     private var snake: Snake!
     private var food: Food!
     private var powerUp: PowerUp?
     private var bombs: [Bomb] = []
+    private var walls: Walls?
+
+    /// Index into Level.all. Only meaningful in .levels mode.
+    private var currentLevelIndex = 0
+
+    /// Score earned since the current level loaded -- separate from the
+    /// run's total `score`, so cycling back to level 1 after the last level
+    /// doesn't instantly re-trigger every threshold on the next tick.
+    private var levelProgress = 0
+
+    /// True from the moment a level's threshold is hit until beginNextLevel()
+    /// is called (from the Level Complete overlay's tap) -- freezes the tick
+    /// loop entirely, same as isGameOver, but isn't a loss.
+    private var isAwaitingNextLevel = false
+    var onLevelComplete: (() -> Void)?
 
     /// Chance, per grid tick, of a power-up spawning while none is active.
     /// At the starting move speed (~5.5 ticks/sec) this averages roughly
@@ -52,8 +69,9 @@ final class GameManager {
     var onScoreChanged: ((Int) -> Void)?
     var onGameOver: (() -> Void)?
 
-    init(scene: SKScene, columns: Int, rows: Int, cellSize: CGFloat, origin: CGPoint) {
+    init(scene: SKScene, mode: GameMode, columns: Int, rows: Int, cellSize: CGFloat, origin: CGPoint) {
         self.scene = scene
+        self.mode = mode
         self.columns = columns
         self.rows = rows
         self.cellSize = cellSize
@@ -67,6 +85,8 @@ final class GameManager {
         powerUp = nil
         bombs.forEach { $0.removeFromScene() }
         bombs.removeAll()
+        walls?.removeFromScene()
+        walls = nil
 
         isGameOver = false
         score = 0
@@ -75,29 +95,43 @@ final class GameManager {
         lastUpdateTime = 0
         isBombEaterActive = false
         bombEaterTimeRemaining = 0
+        currentLevelIndex = 0
+        levelProgress = 0
+        isAwaitingNextLevel = false
 
         let start = GridPoint(x: columns / 2, y: rows / 2)
         let newSnake = Snake(startingAt: start, length: 3, direction: .right, cellSize: cellSize, origin: origin)
-        let newFood = Food(columns: columns, rows: rows, cellSize: cellSize, origin: origin, avoiding: newSnake.segments)
-
         if let scene {
             newSnake.addToScene(scene)
-            newFood.addToScene(scene)
+        }
+        snake = newSnake
+
+        if mode == .levels {
+            loadCurrentLevelWalls()
         }
 
-        snake = newSnake
+        let newFood = Food(columns: columns, rows: rows, cellSize: cellSize, origin: origin, avoiding: occupiedBySnakeAndWalls)
+        if let scene {
+            newFood.addToScene(scene)
+        }
         food = newFood
 
         onScoreChanged?(score)
     }
 
+    /// The snake's own body plus the current level's walls, if any -- the
+    /// baseline every spawn/relocate call should avoid landing on.
+    private var occupiedBySnakeAndWalls: [GridPoint] {
+        snake.segments + Array(walls?.positions ?? [])
+    }
+
     func turn(to direction: Direction) {
-        guard !isGameOver else { return }
+        guard !isGameOver, !isAwaitingNextLevel else { return }
         snake.turn(to: direction)
     }
 
     func tick(currentTime: TimeInterval) {
-        guard !isGameOver else { return }
+        guard !isGameOver, !isAwaitingNextLevel else { return }
 
         if lastUpdateTime == 0 {
             lastUpdateTime = currentTime
@@ -117,10 +151,21 @@ final class GameManager {
         case .ateFood:
             score += 1
             onScoreChanged?(score)
-            food.relocate(columns: columns, rows: rows, avoiding: snake.segments)
+            food.relocate(columns: columns, rows: rows, avoiding: occupiedBySnakeAndWalls)
             moveInterval = max(0.08, moveInterval - 0.004)
             attemptBombSpawn()
+            if mode == .levels {
+                advanceLevelProgress()
+            }
         case .collided:
+            isGameOver = true
+            onGameOver?()
+            return
+        }
+
+        // Walls are absolute -- no power-up grants immunity to them, so this
+        // is checked immediately, unlike the bomb-eater/bomb interplay below.
+        if let walls, walls.contains(snake.head) {
             isGameOver = true
             onGameOver?()
             return
@@ -150,6 +195,60 @@ final class GameManager {
         attemptPowerUpSpawn()
     }
 
+    /// Tracks progress toward the *current* level's threshold, separate
+    /// from the run's total score -- so this resets on every advance,
+    /// rather than comparing against a total that keeps climbing. Hitting
+    /// the threshold pauses the game (see isAwaitingNextLevel) rather than
+    /// loading the next level immediately -- that happens in
+    /// beginNextLevel(), once the Level Complete overlay is tapped.
+    private func advanceLevelProgress() {
+        levelProgress += 1
+        guard levelProgress >= Level.all[currentLevelIndex].pointsToAdvance else { return }
+
+        levelProgress = 0
+        isAwaitingNextLevel = true
+        onLevelComplete?()
+    }
+
+    /// Called from the Level Complete overlay's tap.
+    func beginNextLevel() {
+        guard isAwaitingNextLevel else { return }
+        isAwaitingNextLevel = false
+
+        currentLevelIndex = (currentLevelIndex + 1) % Level.all.count
+        loadCurrentLevelWalls()
+
+        // Recenter first: a stale position could now sit inside the new
+        // level's walls, and food/bombs/power-up need the *new* position
+        // to avoid. Length and total score carry over unchanged.
+        snake.recenter(at: GridPoint(x: columns / 2, y: rows / 2), direction: .right)
+
+        food.removeFromScene()
+        bombs.forEach { $0.removeFromScene() }
+        bombs.removeAll()
+        powerUp?.removeFromScene()
+        powerUp = nil
+
+        let newFood = Food(columns: columns, rows: rows, cellSize: cellSize, origin: origin, avoiding: occupiedBySnakeAndWalls)
+        if let scene {
+            newFood.addToScene(scene)
+        }
+        food = newFood
+
+        // Avoid a runaway "catch-up" tick using a delta spanning the pause.
+        timeSinceLastMove = 0
+        lastUpdateTime = 0
+    }
+
+    private func loadCurrentLevelWalls() {
+        walls?.removeFromScene()
+        let newWalls = Walls(positions: Level.all[currentLevelIndex].walls, cellSize: cellSize, origin: origin)
+        if let scene {
+            newWalls.addToScene(scene)
+        }
+        walls = newWalls
+    }
+
     private func updateBombEaterTimer(delta: TimeInterval) {
         guard isBombEaterActive else { return }
         bombEaterTimeRemaining -= delta
@@ -168,7 +267,7 @@ final class GameManager {
     private func attemptBombSpawn() {
         guard Double.random(in: 0..<1) < bombSpawnChance else { return }
 
-        var occupied = snake.segments
+        var occupied = occupiedBySnakeAndWalls
         occupied.append(food.position)
         let position = GridGeometry.randomPosition(columns: columns, rows: rows, avoiding: occupied)
 
@@ -187,7 +286,7 @@ final class GameManager {
 
         powerUp?.removeFromScene()
 
-        var occupied = snake.segments
+        var occupied = occupiedBySnakeAndWalls
         occupied.append(food.position)
         let kind = PowerUpKind.allCases.randomElement()!
         let newPowerUp = PowerUp(kind: kind, columns: columns, rows: rows, cellSize: cellSize, origin: origin, avoiding: occupied)

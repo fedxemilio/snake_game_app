@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct StartView: View {
+    @Binding var mode: GameMode
     let onPlay: () -> Void
 
     var body: some View {
@@ -8,10 +9,17 @@ struct StartView: View {
             Color(red: 0.09, green: 0.10, blue: 0.14)
                 .ignoresSafeArea()
 
-            VStack(spacing: 56) {
+            VStack(spacing: 32) {
                 Text("Sea Snake")
                     .font(.system(size: 44, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
+
+                Button(action: { mode = mode.next }) {
+                    Text(mode.label)
+                        .font(.system(size: 16, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.7))
+                }
+                .buttonStyle(.plain)
 
                 Button(action: onPlay) {
                     Text("Play")
@@ -21,6 +29,7 @@ struct StartView: View {
                         .background(Circle().fill(Color.green))
                 }
                 .buttonStyle(.plain)
+                .padding(.top, 24)
             }
         }
         .statusBarHidden()
@@ -28,5 +37,5 @@ struct StartView: View {
 }
 
 #Preview {
-    StartView(onPlay: {})
+    StartView(mode: .constant(.freePlay), onPlay: {})
 }

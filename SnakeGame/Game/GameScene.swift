@@ -1,8 +1,9 @@
 import SpriteKit
 
 final class GameScene: SKScene {
-    private let columns = 16
-    private let rows = 24
+    private let mode: GameMode
+    private let columns: Int
+    private let rows: Int
 
     private var gameManager: GameManager!
     private var scoreLabel: SKLabelNode!
@@ -12,6 +13,28 @@ final class GameScene: SKScene {
     /// Fired once, when a run ends. The Game Over UI itself lives in
     /// SwiftUI (GameOverOverlay), not in the scene.
     var onGameOver: (() -> Void)?
+
+    /// Fired each time a level's threshold is hit (.levels mode only). Same
+    /// pattern as onGameOver -- the overlay lives in SwiftUI.
+    var onLevelComplete: (() -> Void)?
+
+    init(mode: GameMode) {
+        self.mode = mode
+        switch mode {
+        case .freePlay:
+            columns = 16
+            rows = 24
+        case .levels:
+            // All levels share one grid size -- see Level.swift.
+            columns = Level.all[0].columns
+            rows = Level.all[0].rows
+        }
+        super.init(size: .zero)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
 
     override func didMove(to view: SKView) {
         backgroundColor = SKColor(red: 0.03, green: 0.09, blue: 0.22, alpha: 1)
@@ -24,15 +47,24 @@ final class GameScene: SKScene {
             y: (size.height - CGFloat(rows) * cellSize) / 2
         )
 
-        gameManager = GameManager(scene: self, columns: columns, rows: rows, cellSize: cellSize, origin: origin)
+        gameManager = GameManager(scene: self, mode: mode, columns: columns, rows: rows, cellSize: cellSize, origin: origin)
         gameManager.onScoreChanged = { [weak self] score in
             self?.scoreLabel.text = "Score: \(score)"
         }
         gameManager.onGameOver = { [weak self] in
             self?.onGameOver?()
         }
+        gameManager.onLevelComplete = { [weak self] in
+            self?.onLevelComplete?()
+        }
 
-        drawGridBorder(cellSize: cellSize, origin: origin)
+        // Free-play's grid doesn't fill the screen, so a border marks its
+        // wrap boundary. Levels mode already uses (most of) the screen, so
+        // the edge is visible on its own.
+        if mode == .freePlay {
+            drawGridBorder(cellSize: cellSize, origin: origin)
+        }
+
         setUpScoreLabel()
         setUpSwipeGestures(on: view)
         gameManager.startNewGame()
@@ -41,6 +73,11 @@ final class GameScene: SKScene {
     /// Called from the Game Over overlay's Play Again button.
     func startNewGame() {
         gameManager.startNewGame()
+    }
+
+    /// Called from the Level Complete overlay's tap.
+    func beginNextLevel() {
+        gameManager.beginNextLevel()
     }
 
     // MARK: - Setup
