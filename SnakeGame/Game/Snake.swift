@@ -25,6 +25,14 @@ final class Snake {
     private var isGlowing = false
     private var glowColor: SKColor = .clear
 
+    /// Set only when `advance(..., halvedGrowth: true)` is in play. Alternates
+    /// false/true each fruit eaten -- true means "this fruit's growth is
+    /// deferred to the next one" (see `advance`). Purely a growth-cadence
+    /// flag; the segment it corresponds to isn't tracked separately (see
+    /// `growthIndicatorNode` for why that's deliberate).
+    private var pendingGrowth = false
+    private var growthIndicatorNode: SKShapeNode?
+
     var head: GridPoint { segments[0] }
 
     init(startingAt head: GridPoint, length: Int, direction: Direction, cellSize: CGFloat, origin: CGPoint) {
@@ -48,6 +56,7 @@ final class Snake {
         self.direction = direction
         self.pendingDirection = direction
         segments = Snake.horizontalSegments(head: head, length: segments.count)
+        pendingGrowth = false
         syncNodes()
     }
 
@@ -181,7 +190,13 @@ final class Snake {
         container.run(.sequence(steps))
     }
 
-    func advance(columns: Int, rows: Int, foodPosition: GridPoint) -> SnakeAdvanceResult {
+    /// `halvedGrowth`: when true (Levels mode), only every *other* fruit
+    /// actually lengthens the snake -- the in-between fruit still removes
+    /// the tail (net zero growth) but flips `pendingGrowth` on, which shows
+    /// a small non-collidable indicator at the tail (see `syncNodes`) as a
+    /// preview of the growth to come. When false (free play), unchanged:
+    /// every fruit grows the snake by one segment.
+    func advance(columns: Int, rows: Int, foodPosition: GridPoint, halvedGrowth: Bool) -> SnakeAdvanceResult {
         direction = pendingDirection
 
         let vector = direction.vector
@@ -195,16 +210,25 @@ final class Snake {
 
         segments.insert(newHead, at: 0)
 
-        let result: SnakeAdvanceResult
-        if newHead == foodPosition {
-            result = .ateFood
-        } else {
+        guard newHead == foodPosition else {
             segments.removeLast()
-            result = .moved
+            syncNodes()
+            return .moved
+        }
+
+        let shouldGrow: Bool
+        if halvedGrowth {
+            shouldGrow = pendingGrowth
+            pendingGrowth.toggle()
+        } else {
+            shouldGrow = true
+        }
+        if !shouldGrow {
+            segments.removeLast()
         }
 
         syncNodes()
-        return result
+        return .ateFood
     }
 
     /// Reuses existing nodes and only repositions them; nodes are created or
@@ -226,5 +250,34 @@ final class Snake {
             node.strokeColor = isGlowing ? glowColor : .clear
             node.glowWidth = isGlowing ? 5 : 0
         }
+
+        syncGrowthIndicator()
+    }
+
+    /// Purely cosmetic preview of a deferred (halved-growth) fruit: a small
+    /// circle just past the tail, extrapolated from the last two segments
+    /// so it trails naturally as the snake moves. Never part of `segments`,
+    /// never checked for collision -- this is deliberately *not* a real
+    /// cell, to avoid needing any half-collidable-cell logic in `advance`.
+    private func syncGrowthIndicator() {
+        guard pendingGrowth, segments.count >= 2 else {
+            growthIndicatorNode?.isHidden = true
+            return
+        }
+
+        let tail = segments[segments.count - 1]
+        let beforeTail = segments[segments.count - 2]
+        let trailingPoint = GridPoint(x: tail.x + (tail.x - beforeTail.x), y: tail.y + (tail.y - beforeTail.y))
+
+        let node = growthIndicatorNode ?? {
+            let node = SKShapeNode(circleOfRadius: (cellSize - 2) / 2 * 0.55)
+            node.strokeColor = .clear
+            container.addChild(node)
+            growthIndicatorNode = node
+            return node
+        }()
+        node.isHidden = false
+        node.position = GridGeometry.position(for: trailingPoint, cellSize: cellSize, origin: origin)
+        node.fillColor = bodyColor.withAlphaComponent(0.45)
     }
 }

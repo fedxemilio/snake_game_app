@@ -8,7 +8,13 @@ final class GameScene: SKScene {
     private var gameManager: GameManager!
     private var scoreLabel: SKLabelNode!
 
-    private var swipeDirections: [ObjectIdentifier: Direction] = [:]
+    /// How far (in points) a drag has to travel along its dominant axis
+    /// before it registers as a turn. Small enough that quick back-to-back
+    /// direction changes (e.g. down-then-right in a tight corner) don't
+    /// each need a full separate gesture -- the translation resets to zero
+    /// after every registered turn, so the next turn only needs to clear
+    /// this threshold again from the finger's *current* position.
+    private let dragTurnThreshold: CGFloat = 24
 
     /// Fired once, when a run ends. The Game Over UI itself lives in
     /// SwiftUI (GameOverOverlay), not in the scene.
@@ -66,7 +72,7 @@ final class GameScene: SKScene {
         }
 
         setUpScoreLabel()
-        setUpSwipeGestures(on: view)
+        setUpInputGesture(on: view)
         gameManager.startNewGame()
     }
 
@@ -108,22 +114,34 @@ final class GameScene: SKScene {
         addChild(scoreLabel)
     }
 
-    private func setUpSwipeGestures(on view: SKView) {
-        let directions: [(UISwipeGestureRecognizer.Direction, Direction)] = [
-            (.up, .up), (.down, .down), (.left, .left), (.right, .right)
-        ]
-        for (uiDirection, gameDirection) in directions {
-            let recognizer = UISwipeGestureRecognizer(target: self, action: #selector(handleSwipe(_:)))
-            recognizer.direction = uiDirection
-            recognizer.numberOfTouchesRequired = 1
-            view.addGestureRecognizer(recognizer)
-            swipeDirections[ObjectIdentifier(recognizer)] = gameDirection
-        }
+    /// Continuous drag-to-steer rather than discrete swipes: a swipe
+    /// recognizer only fires once its *entire* gesture clears UIKit's own
+    /// distance/velocity thresholds, which made quick direction reversals
+    /// at high speed feel like they needed two full separate flicks. A pan
+    /// recognizes translation live, so a turn registers the moment the
+    /// finger crosses `dragTurnThreshold` -- no need to lift and re-swipe.
+    private func setUpInputGesture(on view: SKView) {
+        let recognizer = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
+        view.addGestureRecognizer(recognizer)
     }
 
-    @objc private func handleSwipe(_ recognizer: UISwipeGestureRecognizer) {
-        guard let direction = swipeDirections[ObjectIdentifier(recognizer)] else { return }
+    @objc private func handlePan(_ recognizer: UIPanGestureRecognizer) {
+        guard recognizer.state == .began || recognizer.state == .changed else { return }
+
+        let translation = recognizer.translation(in: recognizer.view)
+        let direction: Direction
+        if abs(translation.x) > abs(translation.y) {
+            guard abs(translation.x) >= dragTurnThreshold else { return }
+            direction = translation.x > 0 ? .right : .left
+        } else {
+            guard abs(translation.y) >= dragTurnThreshold else { return }
+            // UIKit's translation is screen-space (y grows downward),
+            // matching "down" here regardless of the scene's y-up grid.
+            direction = translation.y > 0 ? .down : .up
+        }
+
         gameManager.turn(to: direction)
+        recognizer.setTranslation(.zero, in: recognizer.view)
     }
 
     // MARK: - Game loop
