@@ -40,7 +40,13 @@ The app is split cleanly at the framework boundary: SwiftUI owns navigation and 
 
 ### Mode selection flows downward, ahead of geometry
 
-`GameMode` (`.freePlay` / `.levels`, `CaseIterable` so new modes don't need toggle-logic changes) is chosen on `StartView` and owned by `RootView`. It has to reach `GameScene` *before* `didMove(to:)` runs, because the grid's `columns`/`rows` (and therefore `cellSize`/`origin`) depend on the mode — free-play is a fixed 16×24 centered square grid with a border; levels mode is 16×30, no border, sized from whichever level a run starts on. That's why `GameScene` takes `mode` as an init parameter rather than being constructed bare and configured after the fact.
+`GameMode` (`.freePlay` / `.levels` / `.adventure`, `CaseIterable` so new modes don't need toggle-logic changes — `StartView`'s "mode: …" button just calls `mode.next`) is chosen on `StartView` and owned by `RootView`. It has to reach `GameScene` *before* `didMove(to:)` runs, because the grid's `columns`/`rows` (and therefore `cellSize`/`origin`) depend on the mode:
+
+- Free-play: fixed 16×24, centered, square cells sized to fit the screen, with a border (the grid doesn't fill the screen, so the border marks the wrap boundary).
+- Levels: 16×30, same fit-to-screen sizing, no border (already fills most of the screen), sized from whichever level a run starts on.
+- Adventure: a fixed 24pt cell size (`GameScene.adventureCellSize`) instead of fit-to-screen — the grid is deliberately *larger* than the viewport (see below), so there's nothing to fit.
+
+That's why `GameScene` takes `mode` as an init parameter rather than being constructed bare and configured after the fact.
 
 ### GameManager orchestrates; each grid entity owns its own state + rendering
 
@@ -61,6 +67,25 @@ The app is split cleanly at the framework boundary: SwiftUI owns navigation and 
 
 `Level` (in `Level.swift`) defines a layout as an ASCII grid (`-` empty, anything else a wall) plus `pointsToAdvance`, mirroring the shape of the original Python prototype's `LEVELS` list. `Level.all` is the fixed roster of three; all three currently share one grid size since `cellSize` is computed once per run and can't change without rebuilding the scene. `GameManager` tracks level advancement via a *separate* `levelProgress` counter, not the run's total `score` — thresholds compare against `levelProgress`, which resets to 0 on every advance, specifically so cycling back to level 1 after the last level doesn't instantly re-trigger every threshold against an already-high total score. On advance, walls/food/bombs/power-up are swapped/cleared, but the snake and total score carry over.
 
+Levels mode also halves the snake's real growth rate (`Snake.advance(..., halvedGrowth:)`): only every *other* fruit actually lengthens `segments`, tracked via `Snake.pendingGrowth` toggling each fruit. The in-between fruit shows a small translucent circle trailing the tail as a preview of the growth to come — deliberately **not** a real grid cell (never added to `segments`, never touches the collision check in `advance`), just a cosmetic node whose position is recomputed each frame by extrapolating the last two real segments. That was a deliberate choice to avoid needing any half-collidable-cell logic. Free play and adventure mode are unaffected (`halvedGrowth: mode == .levels` is the only gate).
+
+### Adventure mode: a world bigger than the screen
+
+Free-play and levels both size their grid to fit entirely on screen. Adventure mode inverts that: `AdventureMap` (ported from a second, unrelated Python prototype's `map_data.py`) defines one static 70×40 layout, deliberately larger than any phone viewport at a legible cell size. Consequences that ripple through `GameScene`:
+
+- An `SKCameraNode` (`GameScene.cameraNode`, non-nil only in `.adventure`) is what the player actually sees through; `GameScene.updateCamera()` runs every frame (not just on grid ticks) and re-centers it on `GameManager.headWorldPosition`, clamped so the viewport never shows past the map's edges — same clamp-camera-to-world-bounds idea as the Python prototype's `camera_x`/`camera_y`.
+- HUD elements must be reparented onto the camera, not the scene, or they'd scroll off with the world — `setUpScoreLabel()` branches on whether `cameraNode` exists and positions relative to the camera's own center (`-size.width/2 + …`) instead of the scene origin.
+- `AdventureMap.walls` only treats `'0'` as a wall; the source map's `'1'`/`'c'` were separate floor-texture tiles (path/curve) with no gameplay meaning in this draft, so they render as plain floor. Unlike the source Python script (whose walls were actually decorative — it never checked wall collision at all), this port's walls are real and blocking, reusing the same `Walls` type and `GameManager` wall-collision check as Levels mode.
+- Otherwise: standard (non-halved) growth, wrap-around at the *map's* true edges (not the visible viewport), bombs/power-ups/self-collision all unchanged from free-play.
+
+## Known issues
+
+- **Rapid drag turns can chain into a self-collision** ([#7](https://github.com/fedxemilio/snake_game_app/issues/7)): continuous drag steering (`GameScene.handlePan`) can register two 90° turns before the snake has actually advanced a grid step, which sums to a reversal into the snake's own neck (`Snake.turn(to:)` only rejects a direction opposite the *currently committed* `direction`, not one that would conflict with an already-pending turn). A deliberate two-tick U-turn should stay possible; a third turn landing in the same window shouldn't. Likely fix: track whether `pendingDirection` has already changed since the last `advance()` and ignore further `turn(to:)` calls until the next tick commits and clears that flag. A more precise but more involved alternative: reject a proposed direction if it would land the next head position on `segments[1]` (the neck) directly, rather than gating on input frequency as a proxy for that.
+
 ## Prior art
 
-A earlier, unrelated Python/pygame prototype of this game exists at `~/Desktop/workspace/snake_game` (not part of this repo). It's the source for this project's level-layout style (`level.py`'s `LEVELS` ASCII-grid format) and general feature set (bombs, power-ups, levels) — worth checking if a design question comes up that it already answered.
+Two earlier, unrelated Python/pygame prototypes, neither part of this repo:
+- `~/Desktop/workspace/snake_game` — source for this project's level-layout style (`level.py`'s `LEVELS` ASCII-grid format) and general feature set (bombs, power-ups, levels).
+- `~/Desktop/snake_game_other` — source for Adventure mode's map (`map_data.py`) and its scrolling-camera approach (`snake_map.py`'s `camera_x`/`camera_y` clamping).
+
+Worth checking either if a design question comes up that one of them already answered.

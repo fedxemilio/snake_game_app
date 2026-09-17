@@ -5,8 +5,19 @@ final class GameScene: SKScene {
     private let columns: Int
     private let rows: Int
 
+    /// Fixed cell size for Adventure mode -- unlike free-play/levels, the
+    /// grid doesn't need to fit the screen; it's meant to be larger than
+    /// it, with the camera panning to follow the snake.
+    private static let adventureCellSize: CGFloat = 24
+
     private var gameManager: GameManager!
     private var scoreLabel: SKLabelNode!
+
+    /// Non-nil only in .adventure mode. Its presence is also what tells
+    /// setUpScoreLabel() and update() to do camera-relative HUD placement
+    /// and per-frame following, respectively.
+    private var cameraNode: SKCameraNode?
+    private var worldSize: CGSize = .zero
 
     /// How far (in points) a drag has to travel along its dominant axis
     /// before it registers as a turn. Small enough that quick back-to-back
@@ -34,6 +45,9 @@ final class GameScene: SKScene {
             // All levels share one grid size -- see Level.swift.
             columns = Level.all[0].columns
             rows = Level.all[0].rows
+        case .adventure:
+            columns = AdventureMap.columns
+            rows = AdventureMap.rows
         }
         super.init(size: .zero)
     }
@@ -45,13 +59,23 @@ final class GameScene: SKScene {
     override func didMove(to view: SKView) {
         backgroundColor = SKColor(red: 0.03, green: 0.09, blue: 0.22, alpha: 1)
 
-        let cellWidth = size.width / CGFloat(columns)
-        let cellHeight = size.height / CGFloat(rows)
-        let cellSize = min(cellWidth, cellHeight)
-        let origin = CGPoint(
-            x: (size.width - CGFloat(columns) * cellSize) / 2,
-            y: (size.height - CGFloat(rows) * cellSize) / 2
-        )
+        let cellSize: CGFloat
+        let origin: CGPoint
+        switch mode {
+        case .freePlay, .levels:
+            let cellWidth = size.width / CGFloat(columns)
+            let cellHeight = size.height / CGFloat(rows)
+            cellSize = min(cellWidth, cellHeight)
+            origin = CGPoint(
+                x: (size.width - CGFloat(columns) * cellSize) / 2,
+                y: (size.height - CGFloat(rows) * cellSize) / 2
+            )
+        case .adventure:
+            cellSize = Self.adventureCellSize
+            origin = .zero
+            worldSize = CGSize(width: CGFloat(columns) * cellSize, height: CGFloat(rows) * cellSize)
+            setUpCamera()
+        }
 
         gameManager = GameManager(scene: self, mode: mode, columns: columns, rows: rows, cellSize: cellSize, origin: origin)
         gameManager.onScoreChanged = { [weak self] score in
@@ -65,8 +89,9 @@ final class GameScene: SKScene {
         }
 
         // Free-play's grid doesn't fill the screen, so a border marks its
-        // wrap boundary. Levels mode already uses (most of) the screen, so
-        // the edge is visible on its own.
+        // wrap boundary. Levels mode and Adventure mode already use (most
+        // of, or far more than) the screen, so the edge is visible on its
+        // own -- Adventure's map even has its own border walls baked in.
         if mode == .freePlay {
             drawGridBorder(cellSize: cellSize, origin: origin)
         }
@@ -74,6 +99,12 @@ final class GameScene: SKScene {
         setUpScoreLabel()
         setUpInputGesture(on: view)
         gameManager.startNewGame()
+
+        // Set the camera to its correct starting position before the first
+        // frame renders, rather than letting it snap there on frame two.
+        if mode == .adventure {
+            updateCamera()
+        }
     }
 
     /// Called from the Game Over overlay's Play Again button.
@@ -109,9 +140,44 @@ final class GameScene: SKScene {
         scoreLabel.fontSize = 20
         scoreLabel.fontColor = .white
         scoreLabel.horizontalAlignmentMode = .left
-        scoreLabel.position = CGPoint(x: 16, y: size.height - 40)
         scoreLabel.zPosition = 10
-        addChild(scoreLabel)
+
+        if let cameraNode {
+            // A camera's children are positioned relative to *its own*
+            // center, not the scene origin -- this is what keeps the HUD
+            // pinned to the screen as the camera pans around the world.
+            scoreLabel.position = CGPoint(x: -size.width / 2 + 16, y: size.height / 2 - 40)
+            cameraNode.addChild(scoreLabel)
+        } else {
+            scoreLabel.position = CGPoint(x: 16, y: size.height - 40)
+            addChild(scoreLabel)
+        }
+    }
+
+    /// Adventure mode only: a camera the snake's head drives, clamped so
+    /// the viewport never shows past the map's edges.
+    private func setUpCamera() {
+        let camera = SKCameraNode()
+        addChild(camera)
+        self.camera = camera
+        cameraNode = camera
+    }
+
+    private func updateCamera() {
+        guard let cameraNode else { return }
+
+        let headPosition = gameManager.headWorldPosition
+        let halfWidth = size.width / 2
+        let halfHeight = size.height / 2
+
+        let x = worldSize.width <= size.width
+            ? worldSize.width / 2
+            : min(max(headPosition.x, halfWidth), worldSize.width - halfWidth)
+        let y = worldSize.height <= size.height
+            ? worldSize.height / 2
+            : min(max(headPosition.y, halfHeight), worldSize.height - halfHeight)
+
+        cameraNode.position = CGPoint(x: x, y: y)
     }
 
     /// Continuous drag-to-steer rather than discrete swipes: a swipe
@@ -148,5 +214,8 @@ final class GameScene: SKScene {
 
     override func update(_ currentTime: TimeInterval) {
         gameManager.tick(currentTime: currentTime)
+        if mode == .adventure {
+            updateCamera()
+        }
     }
 }
