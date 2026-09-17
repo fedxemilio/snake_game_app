@@ -22,6 +22,8 @@ final class Snake {
 
     private static let defaultBodyColor: SKColor = .systemGreen
     private var bodyColor: SKColor = defaultBodyColor
+    private var isGlowing = false
+    private var glowColor: SKColor = .clear
 
     var head: GridPoint { segments[0] }
 
@@ -63,13 +65,15 @@ final class Snake {
         pendingDirection = newDirection
     }
 
-    /// Shrinks the tail by up to `amount`, never going below the snake's
-    /// own starting length. A no-op once already at that floor.
-    func cutTail(by amount: Int) {
-        let targetCount = max(minimumLength, segments.count - amount)
-        guard targetCount < segments.count else { return }
-        segments.removeLast(segments.count - targetCount)
+    /// Removes exactly one tail segment, never going below the snake's own
+    /// starting length. Returns whether it actually happened -- the driver
+    /// of a multi-pop sequence can stop once this starts returning false.
+    @discardableResult
+    private func popTailSegment() -> Bool {
+        guard segments.count > minimumLength else { return false }
+        segments.removeLast()
         syncNodes()
+        return true
     }
 
     /// Tints the whole snake (e.g. while a timed power-up is active).
@@ -82,6 +86,99 @@ final class Snake {
     func resetBodyColor() {
         bodyColor = Snake.defaultBodyColor
         syncNodes()
+    }
+
+    private func setGlowing(_ glowing: Bool, color: SKColor = .clear) {
+        isGlowing = glowing
+        glowColor = glowing ? color : .clear
+        syncNodes()
+    }
+
+    // MARK: - Power-up visual effects
+    //
+    // These are purely cosmetic timelines run via SKAction on `container`
+    // (a convenient always-in-the-scene node -- nothing about the action
+    // sequence actually depends on it visually). Each cancels anything
+    // already in flight first, since collecting a second power-up mid
+    // effect should restart cleanly rather than layering animations.
+
+    /// A brief color flash with no other effect -- speed-cooler's whole
+    /// effect, and tail-cutter's fallback when there's no tail to spare.
+    func flashBodyColor(_ color: SKColor, duration: TimeInterval) {
+        container.removeAllActions()
+        container.run(.sequence([
+            .run { [weak self] in self?.setBodyColor(color) },
+            .wait(forDuration: duration),
+            .run { [weak self] in self?.resetBodyColor() }
+        ]))
+    }
+
+    /// Flashes to `color` and pops one tail segment per flash, up to
+    /// `maxPops` times, stopping early once the snake reaches its minimum
+    /// length. If already at minimum, just flashes once with nothing to
+    /// pop (see `flashBodyColor`).
+    func playTailCutterEffect(color: SKColor, maxPops: Int, flashInterval: TimeInterval, fallbackFlashDuration: TimeInterval) {
+        guard segments.count > minimumLength else {
+            flashBodyColor(color, duration: fallbackFlashDuration)
+            return
+        }
+
+        container.removeAllActions()
+        var steps: [SKAction] = []
+        for _ in 0..<maxPops {
+            steps.append(contentsOf: [
+                .run { [weak self] in self?.setBodyColor(color) },
+                .wait(forDuration: flashInterval),
+                .run { [weak self] in
+                    self?.popTailSegment()
+                    self?.resetBodyColor()
+                },
+                .wait(forDuration: flashInterval)
+            ])
+        }
+        container.run(.sequence(steps))
+    }
+
+    /// Bomb-eater's full visual lifecycle: solid `color`, a couple of
+    /// warning flashes near the end, then a steady glow through a final
+    /// grace window, then back to normal. Purely cosmetic -- GameManager
+    /// tracks the matching gameplay timer (immunity) separately, sized to
+    /// the same total duration, so what's shown and what's actually safe
+    /// stay in step.
+    func playBombEaterEffect(
+        color: SKColor,
+        mainDuration: TimeInterval,
+        warningFlashes: Int,
+        warningFlashInterval: TimeInterval,
+        graceDuration: TimeInterval
+    ) {
+        container.removeAllActions()
+
+        let warningWindow = TimeInterval(warningFlashes) * warningFlashInterval * 2
+        let solidDuration = max(0, mainDuration - warningWindow)
+
+        var steps: [SKAction] = [
+            .run { [weak self] in self?.setBodyColor(color) },
+            .wait(forDuration: solidDuration)
+        ]
+        for _ in 0..<warningFlashes {
+            steps.append(contentsOf: [
+                .run { [weak self] in self?.resetBodyColor() },
+                .wait(forDuration: warningFlashInterval),
+                .run { [weak self] in self?.setBodyColor(color) },
+                .wait(forDuration: warningFlashInterval)
+            ])
+        }
+        steps.append(contentsOf: [
+            .run { [weak self] in self?.setGlowing(true, color: color) },
+            .wait(forDuration: graceDuration),
+            .run { [weak self] in
+                self?.setGlowing(false)
+                self?.resetBodyColor()
+            }
+        ])
+
+        container.run(.sequence(steps))
     }
 
     func advance(columns: Int, rows: Int, foodPosition: GridPoint) -> SnakeAdvanceResult {
@@ -115,7 +212,6 @@ final class Snake {
     private func syncNodes() {
         while segmentNodes.count < segments.count {
             let node = SKShapeNode(rectOf: CGSize(width: cellSize - 2, height: cellSize - 2), cornerRadius: 4)
-            node.strokeColor = .clear
             container.addChild(node)
             segmentNodes.append(node)
         }
@@ -127,6 +223,8 @@ final class Snake {
             let node = segmentNodes[index]
             node.position = GridGeometry.position(for: point, cellSize: cellSize, origin: origin)
             node.fillColor = index == 0 ? bodyColor : bodyColor.withAlphaComponent(0.7)
+            node.strokeColor = isGlowing ? glowColor : .clear
+            node.glowWidth = isGlowing ? 5 : 0
         }
     }
 }

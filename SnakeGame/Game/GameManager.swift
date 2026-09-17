@@ -40,9 +40,12 @@ final class GameManager {
     /// Chance, per fruit eaten, that a bomb spawns alongside the next fruit.
     private let bombSpawnChance: Double = 3.0 / 20.0
 
-    /// How many segments a tail-cutter power-up removes (never below the
-    /// snake's starting length -- Snake enforces that floor itself).
-    private let tailCutterAmount = 5
+    /// How many tail segments a tail-cutter removes -- one per flash, up
+    /// to this many, stopping early once the snake reaches its minimum
+    /// length (Snake enforces that floor itself).
+    private let tailCutterMaxPops = 5
+    private let tailCutterFlashInterval: TimeInterval = 0.12
+    private let tailCutterFallbackFlashDuration: TimeInterval = 1.0
 
     /// The move speed a run starts at, and the slowest a speed-cooler is
     /// allowed to push things back to -- it undoes fruit-driven speed-up,
@@ -52,10 +55,17 @@ final class GameManager {
     /// How much slower a speed-cooler makes each move, undoing roughly half
     /// the full fruit-driven speed-up range in one hit.
     private let speedCoolerSlowdown: TimeInterval = 0.05
+    private let speedCoolerFlashDuration: TimeInterval = 1.0
 
-    /// How long a bomb-eater's immunity lasts, in real seconds (independent
-    /// of move speed -- ticked down every frame, not every grid move).
-    private let bombEaterDuration: TimeInterval = 5.0
+    /// Bomb-eater's immunity, in real seconds (independent of move speed --
+    /// ticked down every frame, not every grid move): `bombEaterMainDuration`
+    /// of solid color (with a couple of warning flashes near the end), then
+    /// `bombEaterGraceDuration` more of a still-immune "grace" glow before
+    /// reverting to normal. Total immunity = main + grace.
+    private let bombEaterMainDuration: TimeInterval = 5.0
+    private let bombEaterWarningFlashes = 2
+    private let bombEaterWarningFlashInterval: TimeInterval = 0.15
+    private let bombEaterGraceDuration: TimeInterval = 0.5
     private var isBombEaterActive = false
     private var bombEaterTimeRemaining: TimeInterval = 0
 
@@ -249,13 +259,16 @@ final class GameManager {
         walls = newWalls
     }
 
+    /// Only tracks *gameplay* immunity -- the matching visual (solid color,
+    /// warning flashes, grace glow, revert) is a single SKAction sequence
+    /// kicked off once in activateBombEater(), timed to the same total
+    /// duration rather than driven from here frame by frame.
     private func updateBombEaterTimer(delta: TimeInterval) {
         guard isBombEaterActive else { return }
         bombEaterTimeRemaining -= delta
         if bombEaterTimeRemaining <= 0 {
             isBombEaterActive = false
             bombEaterTimeRemaining = 0
-            snake.resetBodyColor()
         }
     }
 
@@ -299,19 +312,33 @@ final class GameManager {
     private func applyPowerUpEffect(_ kind: PowerUpKind) {
         switch kind {
         case .tailCutter:
-            snake.cutTail(by: tailCutterAmount)
+            snake.playTailCutterEffect(
+                color: PowerUp.color(for: .tailCutter),
+                maxPops: tailCutterMaxPops,
+                flashInterval: tailCutterFlashInterval,
+                fallbackFlashDuration: tailCutterFallbackFlashDuration
+            )
         case .speedCooler:
             moveInterval = min(startingMoveInterval, moveInterval + speedCoolerSlowdown)
+            snake.flashBodyColor(PowerUp.color(for: .speedCooler), duration: speedCoolerFlashDuration)
         case .bombEater:
             activateBombEater()
         }
     }
 
     /// Re-collecting one while already active simply refreshes the timer
-    /// back to the full duration, rather than stacking.
+    /// back to the full duration, rather than stacking -- and restarts the
+    /// visual sequence from the top too (Snake cancels its own in-flight
+    /// actions before starting a new one).
     private func activateBombEater() {
         isBombEaterActive = true
-        bombEaterTimeRemaining = bombEaterDuration
-        snake.setBodyColor(PowerUp.color(for: .bombEater))
+        bombEaterTimeRemaining = bombEaterMainDuration + bombEaterGraceDuration
+        snake.playBombEaterEffect(
+            color: PowerUp.color(for: .bombEater),
+            mainDuration: bombEaterMainDuration,
+            warningFlashes: bombEaterWarningFlashes,
+            warningFlashInterval: bombEaterWarningFlashInterval,
+            graceDuration: bombEaterGraceDuration
+        )
     }
 }
