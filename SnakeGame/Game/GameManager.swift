@@ -42,15 +42,17 @@ final class GameManager {
 
     /// Relative odds of each BombKind on a spawn -- weights need not sum to
     /// 1; `randomBombKind()` normalizes. `.timed`/`.drifter` are shelved at 0
-    /// for now (mine + the new `.sensor` are the only two live kinds while
-    /// sensor gets hands-on testing); `.sensor` is deliberately overweighted
-    /// at 50% for that, and should drop to ~20% (`.mine` picking up the rest)
-    /// once it's confirmed working.
+    /// for now; `.mine`/`.sensor`/`.barrel` are the live kinds while sensor
+    /// (and its barrel interaction) get hands-on testing, so `.sensor` stays
+    /// deliberately overweighted and `.barrel` gets a modest slice just to
+    /// make that interaction observable. Once confirmed working, `.sensor`
+    /// should drop to ~20% with `.mine` picking up the rest.
     private static let bombKindWeights: [(BombKind, Double)] = [
-        (.mine, 0.5),
+        (.mine, 0.4),
         (.timed, 0.0),
         (.drifter, 0.0),
-        (.sensor, 0.5)
+        (.sensor, 0.4),
+        (.barrel, 0.2)
     ]
 
     /// How many tail segments a tail-cutter removes -- one per flash, up
@@ -348,6 +350,17 @@ final class GameManager {
     /// vicinity against -- `resolveSensorDetonation(at:)` may itself end the
     /// game, in which case this bails immediately rather than continuing to
     /// process other bombs against state that no longer matters.
+    ///
+    /// The sweep itself only drops expired bombs from this array -- it does
+    /// *not* also call `removeFromScene()` on them. Every path that sets
+    /// `isExpired` (a `.timed`/`.sensor` fuse running out, a `.barrel`
+    /// exploding) already queues that bomb's own fade/scale-out SKAction;
+    /// calling `removeFromScene()` here too would yank the node out of the
+    /// scene before SpriteKit gets to animate it (actions are evaluated
+    /// after `update(_:)` returns, i.e. after this same call), so the
+    /// "fade away" would never actually be seen. The node keeps running its
+    /// own action and removes itself once that finishes, independent of
+    /// whether this array still references its Bomb wrapper.
     private func updateBombs(delta: TimeInterval) {
         var occupied = occupiedBySnakeAndWalls
         occupied.append(food.position)
@@ -360,9 +373,6 @@ final class GameManager {
             guard !isGameOver else { return }
         }
 
-        let expired = bombs.filter(\.isExpired)
-        guard !expired.isEmpty else { return }
-        expired.forEach { $0.removeFromScene() }
         bombs.removeAll(where: \.isExpired)
     }
 
@@ -374,9 +384,11 @@ final class GameManager {
     /// otherwise "immune to bombs" would quietly mean "immune to touching
     /// one," which isn't what picking it up promises.
     ///
-    /// Removing nearby mines and arming nearby sensors happen regardless of
-    /// immunity -- those are consequences for the *world*, not the player,
-    /// so being immune doesn't stop a chain reaction from playing out.
+    /// Removing nearby mines, arming nearby sensors, and setting off nearby
+    /// barrels all happen regardless of immunity -- those are consequences
+    /// for the *world*, not the player, so being immune doesn't stop a chain
+    /// reaction from playing out (it only protects the player from dying to
+    /// it, checked separately for this bomb and for each barrel below).
     private func resolveSensorDetonation(at position: GridPoint) {
         let vicinity = GameManager.vicinity(of: position, columns: columns, rows: rows)
 
@@ -393,6 +405,27 @@ final class GameManager {
         for other in bombs where other.kind == .sensor && vicinity.contains(other.position) {
             other.arm()
         }
+
+        let barrelsToExplode = bombs.filter { $0.kind == .barrel && vicinity.contains($0.position) }
+        for barrel in barrelsToExplode {
+            let hitsHead = !isBombEaterActive && GameManager.cross(at: barrel.position, contains: snake.head)
+            if let scene {
+                barrel.explodeBarrel(columns: columns, rows: rows, scene: scene)
+            }
+            if hitsHead {
+                isGameOver = true
+                onGameOver?()
+                return
+            }
+        }
+    }
+
+    /// Whether `point` lies on `center`'s row or column -- the cross a
+    /// `.barrel` blasts down when it explodes. Unlike `vicinity`, this never
+    /// needs to wrap: `point`/`center` are always already-valid grid
+    /// coordinates, so a plain equality check covers the whole row/column.
+    private static func cross(at center: GridPoint, contains point: GridPoint) -> Bool {
+        point.x == center.x || point.y == center.y
     }
 
     /// A dormant `.sensor` bomb arms the instant the snake's head enters any

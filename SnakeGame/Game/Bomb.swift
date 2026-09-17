@@ -10,12 +10,17 @@ import SpriteKit
 /// steady pulse, harmless at range) and only starts its countdown once the
 /// snake's head enters one of its 8 surrounding cells -- see `Bomb.arm()`
 /// and `GameManager.resolveSensorDetonation(at:)` for the proximity trigger
-/// and the vicinity-wide consequences when it goes off.
+/// and the vicinity-wide consequences when it goes off. `.barrel` is square
+/// rather than round and otherwise inert -- it never arms or counts down on
+/// its own, and the only thing that sets it off (for now; pushing it safely
+/// is planned but not implemented) is a `.sensor` detonating within its
+/// vicinity, at which point it blasts its entire row and column.
 enum BombKind {
     case mine
     case timed
     case drifter
     case sensor
+    case barrel
 }
 
 /// A hazard: once placed, running the snake's head into one (without
@@ -31,6 +36,12 @@ final class Bomb {
     private let node: SKShapeNode
     private let cellSize: CGFloat
     private let origin: CGPoint
+
+    /// `.sensor`-only: a faint square outline over the 3x3 area this bomb
+    /// will hit, so its blast radius reads at a glance instead of being a
+    /// surprise. Brightens once armed (see `arm()`). nil for every other
+    /// kind.
+    private let vicinityIndicator: SKShapeNode?
 
     /// Real seconds remaining before a `.timed` bomb expires -- ticked in
     /// `update(delta:...)`, independent of grid moves, like the bomb-eater
@@ -59,9 +70,10 @@ final class Bomb {
         self.origin = origin
 
         switch kind {
-        case .mine, .sensor:
+        case .mine, .sensor, .barrel:
             // .sensor starts dormant, exactly like .mine, until arm() is
             // called from proximity or a neighboring sensor's detonation.
+            // .barrel never arms or counts down at all -- see BombKind.
             fuseRemaining = nil
             timeUntilNextDrift = nil
         case .timed:
@@ -72,14 +84,34 @@ final class Bomb {
             timeUntilNextDrift = Bomb.driftInterval
         }
 
-        let radius = (cellSize - 4) / 2
-        node = SKShapeNode(circleOfRadius: radius)
+        let diameter = cellSize - 4
+        switch kind {
+        case .barrel:
+            // Square is the one deliberate shape break -- every other kind
+            // reads as a "mine" silhouette; barrel should look like a
+            // different kind of object entirely.
+            node = SKShapeNode(rectOf: CGSize(width: diameter, height: diameter), cornerRadius: 3)
+        case .mine, .timed, .drifter, .sensor:
+            node = SKShapeNode(circleOfRadius: diameter / 2)
+        }
         node.fillColor = SKColor(white: 0.15, alpha: 1)
         node.strokeColor = Bomb.strokeColor(for: kind)
         node.lineWidth = 2
         node.glowWidth = 6
         node.position = GridGeometry.position(for: position, cellSize: cellSize, origin: origin)
         node.run(Bomb.pulseAction(scale: 1.2, duration: 0.6), withKey: Bomb.pulseActionKey)
+
+        if kind == .sensor {
+            let indicator = SKShapeNode(rectOf: CGSize(width: cellSize * 3 - 2, height: cellSize * 3 - 2))
+            indicator.fillColor = .clear
+            indicator.strokeColor = Bomb.strokeColor(for: .sensor).withAlphaComponent(0.35)
+            indicator.lineWidth = 1.5
+            indicator.position = node.position
+            indicator.zPosition = -1
+            vicinityIndicator = indicator
+        } else {
+            vicinityIndicator = nil
+        }
     }
 
     private static func strokeColor(for kind: BombKind) -> SKColor {
@@ -88,6 +120,7 @@ final class Bomb {
         case .timed: return .systemOrange
         case .drifter: return .systemPink
         case .sensor: return .systemIndigo
+        case .barrel: return .systemBrown
         }
     }
 
@@ -100,11 +133,15 @@ final class Bomb {
     }
 
     func addToScene(_ scene: SKScene) {
+        if let vicinityIndicator {
+            scene.addChild(vicinityIndicator)
+        }
         scene.addChild(node)
     }
 
     func removeFromScene() {
         node.removeFromParent()
+        vicinityIndicator?.removeFromParent()
     }
 
     /// Transitions a dormant `.sensor` bomb into its countdown: switches
@@ -124,6 +161,43 @@ final class Bomb {
         fuseRemaining = Bomb.sensorFuseDuration
         hasPlayedFuseWarning = true
         node.run(Bomb.pulseAction(scale: 1.35, duration: 0.15), withKey: Bomb.pulseActionKey)
+        vicinityIndicator?.strokeColor = Bomb.strokeColor(for: .sensor).withAlphaComponent(0.75)
+        vicinityIndicator?.lineWidth = 2.5
+    }
+
+    /// `.barrel`-only: triggered externally by a `.sensor` detonating within
+    /// its vicinity -- there's no player-safe way to set one off yet
+    /// (pushing it is planned, not implemented, hence it's still lethal to
+    /// touch directly like any other bomb). Marks this bomb for removal and
+    /// flashes its entire row and column. GameManager separately checks that
+    /// same row/column against the snake's head, since Bomb doesn't know
+    /// about the snake.
+    func explodeBarrel(columns: Int, rows: Int, scene: SKScene) {
+        guard kind == .barrel, !isExpired else { return }
+        isExpired = true
+        node.removeAllActions()
+        node.run(.sequence([.scale(to: 1.6, duration: 0.15), .fadeOut(withDuration: 0.15), .removeFromParent()]))
+
+        for x in 0..<columns {
+            addBlastFlash(at: GridPoint(x: x, y: position.y), scene: scene)
+        }
+        for y in 0..<rows {
+            addBlastFlash(at: GridPoint(x: position.x, y: y), scene: scene)
+        }
+    }
+
+    /// One brief cross-blast tile, standalone from this Bomb -- it has no
+    /// gameplay effect of its own (GameManager does the actual head-hit
+    /// check once, against the row/column, not per tile) and just fades
+    /// itself out.
+    private func addBlastFlash(at point: GridPoint, scene: SKScene) {
+        let flash = SKShapeNode(rectOf: CGSize(width: cellSize - 2, height: cellSize - 2))
+        flash.fillColor = Bomb.strokeColor(for: .barrel).withAlphaComponent(0.5)
+        flash.strokeColor = .clear
+        flash.position = GridGeometry.position(for: point, cellSize: cellSize, origin: origin)
+        flash.zPosition = -1
+        scene.addChild(flash)
+        flash.run(.sequence([.fadeOut(withDuration: 0.25), .removeFromParent()]))
     }
 
     /// Advances this bomb's own fuse/movement by `delta` real seconds --
@@ -144,6 +218,7 @@ final class Bomb {
             isExpired = true
             node.removeAllActions()
             node.run(.sequence([.fadeOut(withDuration: 0.2), .removeFromParent()]))
+            vicinityIndicator?.run(.sequence([.fadeOut(withDuration: 0.2), .removeFromParent()]))
             return
         }
 
