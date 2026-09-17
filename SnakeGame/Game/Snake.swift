@@ -33,6 +33,17 @@ final class Snake {
     private var pendingGrowth = false
     private var growthIndicatorNode: SKShapeNode?
 
+    /// Tracks consecutive same-direction turns (left/left/left or
+    /// right/right/right) across separate grid ticks. Two in a row is a
+    /// legitimate fast U-turn onto a perpendicular row/column; a third
+    /// traces a tight enough hook to loop back into the snake's own body a
+    /// few segments back, well past where the immediate-180 guard in
+    /// `turn(to:)` can catch it (that guard only ever compares against the
+    /// single most-recently-committed direction). See `advance`.
+    private enum TurnSense { case left, right }
+    private var lastTurnSense: TurnSense?
+    private var sameSenseStreak = 0
+
     var head: GridPoint { segments[0] }
 
     init(startingAt head: GridPoint, length: Int, direction: Direction, cellSize: CGFloat, origin: CGPoint) {
@@ -48,6 +59,52 @@ final class Snake {
         (0..<length).map { GridPoint(x: head.x - $0, y: head.y) }
     }
 
+    private static let clockwiseOrder: [Direction] = [.up, .right, .down, .left]
+
+    /// nil for going straight, or for a direct reversal (which `turn(to:)`
+    /// already prevents from ever reaching here as `requested`).
+    private static func turnSense(from: Direction, to: Direction) -> TurnSense? {
+        guard let fromIndex = clockwiseOrder.firstIndex(of: from), let toIndex = clockwiseOrder.firstIndex(of: to) else {
+            return nil
+        }
+        switch (toIndex - fromIndex + 4) % 4 {
+        case 1: return .right
+        case 3: return .left
+        default: return nil
+        }
+    }
+
+    /// The actual fix for issue #7: a turn request is only honored if it
+    /// isn't the *third* consecutive turn in the same rotational sense.
+    /// Two lefts (or two rights) in a row stays fast and unrestricted --
+    /// that's a legitimate quick U-turn -- but a third gets dropped and the
+    /// snake just continues in its current direction that tick, rather
+    /// than tracing a hook tight enough to loop back into its own body.
+    private static func resolveNextDirection(
+        current: Direction,
+        requested: Direction,
+        lastTurnSense: inout TurnSense?,
+        sameSenseStreak: inout Int
+    ) -> Direction {
+        guard let sense = turnSense(from: current, to: requested) else {
+            lastTurnSense = nil
+            sameSenseStreak = 0
+            return requested == current ? requested : current
+        }
+
+        if sense == lastTurnSense && sameSenseStreak >= 2 {
+            return current
+        }
+
+        if sense == lastTurnSense {
+            sameSenseStreak += 1
+        } else {
+            lastTurnSense = sense
+            sameSenseStreak = 1
+        }
+        return requested
+    }
+
     /// Repositions the snake to a fresh horizontal line at `head`, keeping
     /// its current length -- used between levels so a run's progress (and
     /// score) carries over, but a stale position can't land inside a
@@ -57,6 +114,8 @@ final class Snake {
         self.pendingDirection = direction
         segments = Snake.horizontalSegments(head: head, length: segments.count)
         pendingGrowth = false
+        lastTurnSense = nil
+        sameSenseStreak = 0
         syncNodes()
     }
 
@@ -197,7 +256,13 @@ final class Snake {
     /// preview of the growth to come. When false (free play), unchanged:
     /// every fruit grows the snake by one segment.
     func advance(columns: Int, rows: Int, foodPosition: GridPoint, halvedGrowth: Bool) -> SnakeAdvanceResult {
-        direction = pendingDirection
+        direction = Snake.resolveNextDirection(
+            current: direction,
+            requested: pendingDirection,
+            lastTurnSense: &lastTurnSense,
+            sameSenseStreak: &sameSenseStreak
+        )
+        pendingDirection = direction
 
         let vector = direction.vector
         var newHead = GridPoint(x: head.x + vector.dx, y: head.y + vector.dy)
