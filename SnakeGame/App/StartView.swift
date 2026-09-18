@@ -6,13 +6,14 @@ struct StartView: View {
 
     var body: some View {
         ZStack {
-            Color(red: 0.09, green: 0.10, blue: 0.14)
-                .ignoresSafeArea()
+            SeaBackground()
 
             VStack(spacing: 32) {
                 Text("Sea Snake")
-                    .font(.system(size: 44, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
+                    .font(.custom("Cinzel", size: 46).weight(.semibold))
+                    .foregroundStyle(Color("Foam"))
+                    .shadow(color: Color("Foam").opacity(0.45), radius: 14)
+                    .shadow(color: Color("PaleGold").opacity(0.2), radius: 26)
 
                 Button(action: { mode = mode.next }) {
                     Text(mode.label)

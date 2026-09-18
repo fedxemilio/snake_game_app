@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		02636EF7C801419CA7749241 /* Snake.swift in Sources */ = {isa = PBXBuildFile; fileRef = D66B020A59C69AB539B00B8B /* Snake.swift */; };
 		0264BBBB4C15F83A04EC23BE /* Walls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EE5CEE61458DAF19A641A44 /* Walls.swift */; };
+		055305F9EEFC4D429F7FB29B /* SeaBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99ACB3BC1545E0753FE685E3 /* SeaBackground.swift */; };
 		0758F52B01A7A8E1FC9FB8BB /* SnakeGameApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9624589B2F093F54407B2D11 /* SnakeGameApp.swift */; };
 		0A121E2BC9576196A9C1FD58 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D7D59531375B4E03F40C4591 /* Assets.xcassets */; };
 		198543825048E7A143BD7A1E /* AdventureMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 612B728DEBFC0188608FC0EA /* AdventureMap.swift */; };
@@ -28,8 +29,11 @@
 		C4602418C071EDF129D26B20 /* PowerUpKind.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE14E965AD6C7A29F89E21B3 /* PowerUpKind.swift */; };
 		C8EF76592B5066AF33CC1FA9 /* GridPoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93F8F26DD85B4374A0240248 /* GridPoint.swift */; };
 		D061F543206C1208C4FC7AB6 /* GameScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91B8364A15FD7652ABF60D1E /* GameScene.swift */; };
+		E8C8726757F87FC9E397C2EC /* OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = 2BB1B22075C92A39C584034A /* OFL.txt */; };
 		EA17EE0CC43EF6826C0A2CB2 /* Bomb.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D47EEAAB3A6E3F83FF8FB4C /* Bomb.swift */; };
+		EB0629B2234120F606228BFC /* WorkSans.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 84A02F192809E063B8DF4243 /* WorkSans.ttf */; };
 		F0EDBDA03A69979B11F0E6F4 /* GameOverOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01CEEA7A51075E7955CE6BE2 /* GameOverOverlay.swift */; };
+		FBAABD359F4A5498773EA5BF /* Cinzel.ttf in Resources */ = {isa = PBXBuildFile; fileRef = D8370AB82F97E915A21DC565 /* Cinzel.ttf */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -40,21 +44,25 @@
 		1EE5CEE61458DAF19A641A44 /* Walls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Walls.swift; sourceTree = "<group>"; };
 		1F6F13BB9D12F173D73CB58E /* GameManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameManager.swift; sourceTree = "<group>"; };
 		271FE04176518291A274972F /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		2BB1B22075C92A39C584034A /* OFL.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = OFL.txt; sourceTree = "<group>"; };
 		2D47EEAAB3A6E3F83FF8FB4C /* Bomb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bomb.swift; sourceTree = "<group>"; };
 		5009AAA1C9BD88F522CC11C7 /* StartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartView.swift; sourceTree = "<group>"; };
 		56FB9A7FF85AA12144CB3CF0 /* LevelCompleteOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LevelCompleteOverlay.swift; sourceTree = "<group>"; };
 		5C6211DF059302C38DF0AEA9 /* PowerUp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerUp.swift; sourceTree = "<group>"; };
 		612B728DEBFC0188608FC0EA /* AdventureMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdventureMap.swift; sourceTree = "<group>"; };
 		81ECA3DDFA4F30D5DAFE781F /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		84A02F192809E063B8DF4243 /* WorkSans.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = WorkSans.ttf; sourceTree = "<group>"; };
 		91B8364A15FD7652ABF60D1E /* GameScene.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameScene.swift; sourceTree = "<group>"; };
 		93F8F26DD85B4374A0240248 /* GridPoint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridPoint.swift; sourceTree = "<group>"; };
 		9624589B2F093F54407B2D11 /* SnakeGameApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnakeGameApp.swift; sourceTree = "<group>"; };
+		99ACB3BC1545E0753FE685E3 /* SeaBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeaBackground.swift; sourceTree = "<group>"; };
 		A118703035681C08766CCBAF /* GameMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameMode.swift; sourceTree = "<group>"; };
 		B63AF8602C611D2D8F8DA1C0 /* PreviewAssets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = PreviewAssets.xcassets; sourceTree = "<group>"; };
 		CF7D2B617376BC95665F03D6 /* GridGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridGeometry.swift; sourceTree = "<group>"; };
 		D25EB0BB8104E1FED01C0AF9 /* Food.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Food.swift; sourceTree = "<group>"; };
 		D66B020A59C69AB539B00B8B /* Snake.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Snake.swift; sourceTree = "<group>"; };
 		D7D59531375B4E03F40C4591 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		D8370AB82F97E915A21DC565 /* Cinzel.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = Cinzel.ttf; sourceTree = "<group>"; };
 		DE14E965AD6C7A29F89E21B3 /* PowerUpKind.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerUpKind.swift; sourceTree = "<group>"; };
 		F4F2F5BDBFC0007F7A22B32E /* SnakeGame.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SnakeGame.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F6BF6FF662DA105D13CCAC28 /* Direction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Direction.swift; sourceTree = "<group>"; };
@@ -80,6 +88,16 @@
 				1EE5CEE61458DAF19A641A44 /* Walls.swift */,
 			);
 			path = Game;
+			sourceTree = "<group>";
+		};
+		3912900CB76E4A904C4E0ADF /* Fonts */ = {
+			isa = PBXGroup;
+			children = (
+				D8370AB82F97E915A21DC565 /* Cinzel.ttf */,
+				2BB1B22075C92A39C584034A /* OFL.txt */,
+				84A02F192809E063B8DF4243 /* WorkSans.ttf */,
+			);
+			path = Fonts;
 			sourceTree = "<group>";
 		};
 		3A7A6DB419406F36B7DEF2B4 /* Products */ = {
@@ -114,6 +132,7 @@
 				10592488ECE7D03C76F2D457 /* GameSessionState.swift */,
 				56FB9A7FF85AA12144CB3CF0 /* LevelCompleteOverlay.swift */,
 				81ECA3DDFA4F30D5DAFE781F /* RootView.swift */,
+				99ACB3BC1545E0753FE685E3 /* SeaBackground.swift */,
 				9624589B2F093F54407B2D11 /* SnakeGameApp.swift */,
 				5009AAA1C9BD88F522CC11C7 /* StartView.swift */,
 			);
@@ -126,6 +145,7 @@
 				D7D59531375B4E03F40C4591 /* Assets.xcassets */,
 				01B42283B3B95CA2DB07B1FB /* Info.plist */,
 				8F76F07BF48D66D61CAF5E43 /* App */,
+				3912900CB76E4A904C4E0ADF /* Fonts */,
 				171D8335D0660DFF7BC6A9C8 /* Game */,
 				422945318EFF763EFAAE22CE /* PreviewContent */,
 			);
@@ -187,7 +207,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				0A121E2BC9576196A9C1FD58 /* Assets.xcassets in Resources */,
+				FBAABD359F4A5498773EA5BF /* Cinzel.ttf in Resources */,
+				E8C8726757F87FC9E397C2EC /* OFL.txt in Resources */,
 				1C79C708AC7EC0B0630AF1A2 /* PreviewAssets.xcassets in Resources */,
+				EB0629B2234120F606228BFC /* WorkSans.ttf in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -215,6 +238,7 @@
 				44ED3A166913C41F3C7BA93F /* PowerUp.swift in Sources */,
 				C4602418C071EDF129D26B20 /* PowerUpKind.swift in Sources */,
 				9A4C9F401F550AD9E07B4063 /* RootView.swift in Sources */,
+				055305F9EEFC4D429F7FB29B /* SeaBackground.swift in Sources */,
 				02636EF7C801419CA7749241 /* Snake.swift in Sources */,
 				0758F52B01A7A8E1FC9FB8BB /* SnakeGameApp.swift in Sources */,
 				1B868009553918F2F0B35538 /* StartView.swift in Sources */,
