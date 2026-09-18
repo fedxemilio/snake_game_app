@@ -144,7 +144,7 @@ final class GameManager {
             break
         }
 
-        let newFood = Food(columns: columns, rows: rows, cellSize: cellSize, origin: origin, avoiding: occupiedBySnakeAndWalls)
+        let newFood = Food(columns: columns, rows: rows, cellSize: cellSize, origin: origin, avoiding: occupiedBySnakeWallsAndBombs)
         if let scene {
             newFood.addToScene(scene)
         }
@@ -157,6 +157,14 @@ final class GameManager {
     /// baseline every spawn/relocate call should avoid landing on.
     private var occupiedBySnakeAndWalls: [GridPoint] {
         snake.segments + Array(walls?.positions ?? [])
+    }
+
+    /// `occupiedBySnakeAndWalls` plus every current bomb position -- food
+    /// must never land on top of a bomb (most bombs, like `.mine`, never
+    /// expire on their own, so landing there would make that fruit
+    /// permanently uncollectable and progression impossible).
+    private var occupiedBySnakeWallsAndBombs: [GridPoint] {
+        occupiedBySnakeAndWalls + bombs.map(\.position)
     }
 
     /// World-space position of the snake's head -- GameScene uses this to
@@ -193,7 +201,7 @@ final class GameManager {
         case .ateFood:
             score += 1
             onScoreChanged?(score)
-            food.relocate(columns: columns, rows: rows, avoiding: occupiedBySnakeAndWalls)
+            food.relocate(columns: columns, rows: rows, avoiding: occupiedBySnakeWallsAndBombs)
             moveInterval = max(0.08, moveInterval - 0.004)
             attemptBombSpawn()
             if mode == .levels {
@@ -273,7 +281,7 @@ final class GameManager {
         powerUp?.removeFromScene()
         powerUp = nil
 
-        let newFood = Food(columns: columns, rows: rows, cellSize: cellSize, origin: origin, avoiding: occupiedBySnakeAndWalls)
+        let newFood = Food(columns: columns, rows: rows, cellSize: cellSize, origin: origin, avoiding: occupiedBySnakeWallsAndBombs)
         if let scene {
             newFood.addToScene(scene)
         }
