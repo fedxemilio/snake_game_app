@@ -18,6 +18,9 @@ targets:
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+        UIAppFonts:
+          - Cinzel.ttf
+          - WorkSans.ttf
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.fedxemilio.SnakeGame
