@@ -170,10 +170,23 @@ final class Snake {
     // already in flight first, since collecting a second power-up mid
     // effect should restart cleanly rather than layering animations.
 
+    /// Cancels whatever power-up visual sequence is currently running, and
+    /// clears glow state directly rather than leaving that to the cancelled
+    /// sequence's own cleanup step -- that step (bomb-eater's final
+    /// `setGlowing(false)`) is exactly what just got cancelled, so relying
+    /// on it would leave the snake glowing in a color no longer tied to any
+    /// active effect (e.g. collecting speed-cooler during bomb-eater's grace
+    /// glow used to leave that glow stuck on permanently).
+    private func cancelInFlightEffect() {
+        container.removeAllActions()
+        isGlowing = false
+        glowColor = .clear
+    }
+
     /// A brief color flash with no other effect -- speed-cooler's whole
     /// effect, and tail-cutter's fallback when there's no tail to spare.
     func flashBodyColor(_ color: SKColor, duration: TimeInterval) {
-        container.removeAllActions()
+        cancelInFlightEffect()
         container.run(.sequence([
             .run { [weak self] in self?.setBodyColor(color) },
             .wait(forDuration: duration),
@@ -191,7 +204,7 @@ final class Snake {
             return
         }
 
-        container.removeAllActions()
+        cancelInFlightEffect()
         var steps: [SKAction] = []
         for _ in 0..<maxPops {
             steps.append(contentsOf: [
@@ -220,7 +233,7 @@ final class Snake {
         warningFlashInterval: TimeInterval,
         graceDuration: TimeInterval
     ) {
-        container.removeAllActions()
+        cancelInFlightEffect()
 
         let warningWindow = TimeInterval(warningFlashes) * warningFlashInterval * 2
         let solidDuration = max(0, mainDuration - warningWindow)
