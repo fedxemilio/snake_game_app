@@ -40,6 +40,16 @@ final class GameManager {
     /// Chance, per fruit eaten, that a bomb spawns alongside the next fruit.
     private let bombSpawnChance: Double = 3.0 / 20.0
 
+    /// Reaction room a new bomb must leave the snake, in cells: this deep
+    /// ahead of the head and this many cells to each side. At the starting
+    /// speed that's ~1.4s of warning ahead; at top speed ~0.6s.
+    private let bombReactionAhead = 8
+    private let bombReactionSide = 3
+
+    /// Adventure mode: no bombs within this many cells of an open map edge,
+    /// so a wrap can't drop the snake next to a bomb it couldn't see coming.
+    private let adventureBombEdgeMargin = 8
+
     /// Relative odds of each BombKind on a spawn -- weights need not sum to
     /// 1; `randomBombKind()` normalizes. `.timed`/`.drifter` are shelved at 0
     /// for now; `.mine`/`.sensor`/`.barrel` are the live kinds while sensor
@@ -321,18 +331,87 @@ final class GameManager {
     /// on the snake). Most bombs (`.mine`) still accumulate and never expire
     /// on their own; `.timed` and `.drifter` are the exceptions (see
     /// `BombKind`), swept or repositioned by `updateBombs(delta:)`.
+    ///
+    /// Never spawns inside the head's forward/side reaction zone, or (in
+    /// Adventure mode) near an open map edge -- see `bombSpawnPosition()`.
+    /// If no fair cell exists, the spawn is simply skipped.
     private func attemptBombSpawn() {
         guard Double.random(in: 0..<1) < bombSpawnChance else { return }
-
-        var occupied = occupiedBySnakeAndWalls
-        occupied.append(food.position)
-        let position = GridGeometry.randomPosition(columns: columns, rows: rows, avoiding: occupied)
+        guard let position = bombSpawnPosition() else { return }
 
         let bomb = Bomb(kind: randomBombKind(), position: position, cellSize: cellSize, origin: origin)
         if let scene {
             bomb.addToScene(scene)
         }
         bombs.append(bomb)
+    }
+
+    /// A random cell a new bomb may fairly occupy, or nil if none exists.
+    /// Beyond the snake/walls/fruit baseline, excludes:
+    /// - the head's reaction zone (`reactionZone()`), so a bomb can never
+    ///   appear where the snake has no time to see it and steer away;
+    /// - Adventure mode only: cells within `adventureBombEdgeMargin` of a
+    ///   map edge the snake can wrap through (`isNearOpenEdge`), since the
+    ///   viewport can't show the far side of a wrap.
+    private func bombSpawnPosition() -> GridPoint? {
+        var excluded = Set(occupiedBySnakeAndWalls)
+        excluded.insert(food.position)
+        excluded.formUnion(reactionZone())
+
+        var candidates: [GridPoint] = []
+        for x in 0..<columns {
+            for y in 0..<rows {
+                let point = GridPoint(x: x, y: y)
+                if excluded.contains(point) { continue }
+                if mode == .adventure && isNearOpenEdge(point) { continue }
+                candidates.append(point)
+            }
+        }
+        return candidates.randomElement()
+    }
+
+    /// The block of cells ahead of the head (`bombReactionAhead` deep,
+    /// including the cells level with the head) and `bombReactionSide` wide
+    /// on each side, wrapping at grid edges the way the snake does. Nothing
+    /// behind the head: turning around takes long enough that the player
+    /// sees a bomb appear back there.
+    private func reactionZone() -> [GridPoint] {
+        let forward = snake.direction.vector
+        let side = (dx: -forward.dy, dy: forward.dx)
+        var cells: [GridPoint] = []
+        for ahead in 0...bombReactionAhead {
+            for offset in -bombReactionSide...bombReactionSide {
+                let x = snake.head.x + forward.dx * ahead + side.dx * offset
+                let y = snake.head.y + forward.dy * ahead + side.dy * offset
+                cells.append(GridPoint(
+                    x: ((x % columns) + columns) % columns,
+                    y: ((y % rows) + rows) % rows
+                ))
+            }
+        }
+        return cells
+    }
+
+    /// Whether `point` is within `adventureBombEdgeMargin` of an edge along
+    /// a row/column the snake can actually wrap through. A wall at either
+    /// end of that row (or column) blocks the crossing, so the far side
+    /// can never be arrived at unseen there and the edge doesn't count.
+    private func isNearOpenEdge(_ point: GridPoint) -> Bool {
+        let margin = adventureBombEdgeMargin
+
+        if point.x < margin || point.x >= columns - margin {
+            let blocked = isWall(GridPoint(x: 0, y: point.y)) || isWall(GridPoint(x: columns - 1, y: point.y))
+            if !blocked { return true }
+        }
+        if point.y < margin || point.y >= rows - margin {
+            let blocked = isWall(GridPoint(x: point.x, y: 0)) || isWall(GridPoint(x: point.x, y: rows - 1))
+            if !blocked { return true }
+        }
+        return false
+    }
+
+    private func isWall(_ point: GridPoint) -> Bool {
+        walls?.contains(point) ?? false
     }
 
     private func randomBombKind() -> BombKind {
