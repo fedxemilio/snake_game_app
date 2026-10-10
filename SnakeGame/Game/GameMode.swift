@@ -5,11 +5,20 @@ enum GameMode: CaseIterable, Equatable {
     case levels
     case adventure
 
-    var label: String {
+    var title: String {
         switch self {
-        case .freePlay: return "mode: free-play"
-        case .levels: return "mode: levels"
-        case .adventure: return "mode: adventure"
+        case .freePlay: return "Free Play"
+        case .levels: return "Levels"
+        case .adventure: return "Adventure"
+        }
+    }
+
+    /// One line under the title on the start screen.
+    var tagline: String {
+        switch self {
+        case .freePlay: return "Open water, no end"
+        case .levels: return "Three walled reefs to clear"
+        case .adventure: return "A sea wider than the screen"
         }
     }
 
