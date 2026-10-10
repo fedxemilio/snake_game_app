@@ -38,9 +38,19 @@ The app is split cleanly at the framework boundary: SwiftUI owns navigation and 
 - `ContentView` hosts a single `SpriteView(scene:)`. From there down, SpriteKit's retained-mode scene graph takes over: nodes are mutated in place, not redrawn from scratch each frame.
 - Game-over is *not* handled inside the scene. `GameScene` exposes a plain `onGameOver: (() -> Void)?` closure; `ContentView` wires that into `@StateObject private var session: GameSessionState` (`@Published var isGameOver`), which drives a SwiftUI `GameOverOverlay` shown over the `SpriteView`. Restart and "go home" are both SwiftUI-side actions (`scene.startNewGame()` / a closure back up to `RootView`) — swiping never restarts the game.
 
+### The start menu is animated, but stateless
+
+`StartView` is the only screen with ambient motion; its pieces live in `App/StartMenu/`. Same approach as the math game's menu (`~/Desktop/math_addition_game`): every moving thing is a pure function of one clock, `MenuClock.seconds(at:)`, drawn fresh each frame inside a `TimelineView` + `Canvas` — nothing is stored or stepped, and anything "random" (specks, bubbles, the serpent's route for a given pass) comes from `MenuClock.random(index, salt:)`.
+
+- **`LivingSea`** — the backdrop. The water is `AbyssWaterScene`, a one-sprite SpriteKit scene running an `SKShader` (domain-warped murk, light shafts, caustics, vignette, plus `LivingSea.lightning(at:)` flashes) that recreates `SeaBackground`'s style-guide gradient inside the shader — keep the two in step. It's an `SKShader` (GLSL, compiled at runtime) rather than a SwiftUI `.metal` shader **on purpose**: Xcode 26 won't build `.metal` files without a separate Metal Toolchain download, and this keeps the project building on stock Xcode. On top: a `Canvas` of marine snow, blinking plankton, rising bubbles and `LurkingSerpent`.
+- **`LurkingSerpent`** — a giant silhouette that crosses every 32 s (24 s swimming, 8 s of empty water). Passes alternate between the two stretches of open water the layout leaves (above the title, and between the title and the mode pill); moving the title or pill means re-checking those `baseY` fractions, or it'll swim behind the UI. It reads against the dark water mostly through its blurred dark aura and the rim light along its back, not its body fill.
+- **`FloatingTitle`** — per-letter bob/rock on a swell, breathing glow (the style guide's title glow values), carved depth layers, and a periodic light sweep.
+- **`DiveButtonStyle`** — the "DIVE IN" orb (copy from the style guide): heartbeat glow, sonar rings, turning rings. Its glow/rings draw in a `.background` that spills past the frame so they don't affect layout; only the orb's circle is tappable. Tapping it plays a 0.7 s zoom-and-fade (`StartView.dive()`) before calling `onPlay`.
+- **Reduce Motion**: the water falls back to the static `SeaBackground` (a `SpriteView` that starts paused never renders a frame, so don't just pause it) and the canvases freeze at `MenuClock.still`; the dive skips its animation.
+
 ### Mode selection flows downward, ahead of geometry
 
-`GameMode` (`.freePlay` / `.levels` / `.adventure`, `CaseIterable` so new modes don't need toggle-logic changes — `StartView`'s "mode: …" button just calls `mode.next`) is chosen on `StartView` and owned by `RootView`. It has to reach `GameScene` *before* `didMove(to:)` runs, because the grid's `columns`/`rows` (and therefore `cellSize`/`origin`) depend on the mode:
+`GameMode` (`.freePlay` / `.levels` / `.adventure`, `CaseIterable` so new modes don't need toggle-logic changes — `StartView`'s mode pill just calls `mode.next` and shows `mode.title`/`mode.tagline`) is chosen on `StartView` and owned by `RootView`. It has to reach `GameScene` *before* `didMove(to:)` runs, because the grid's `columns`/`rows` (and therefore `cellSize`/`origin`) depend on the mode:
 
 - Free-play: fixed 16×24, centered, square cells sized to fit the screen, with a border (the grid doesn't fill the screen, so the border marks the wrap boundary).
 - Levels: 16×30, same fit-to-screen sizing, no border (already fills most of the screen), sized from whichever level a run starts on.
