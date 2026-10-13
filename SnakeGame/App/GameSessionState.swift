@@ -6,4 +6,5 @@ import Combine
 final class GameSessionState: ObservableObject {
     @Published var isGameOver = false
     @Published var isLevelComplete = false
+    @Published var score = 0
 }

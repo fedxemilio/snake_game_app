@@ -1,11 +1,11 @@
 import SpriteKit
-import UIKit
 
-/// Owns the food's own position and its own node, same shape as `Snake`.
+/// Owns the food's own position and its own node, same shape as `Snake`. Drawn as
+/// a glowing mango-colored fruit (`SpriteArt.fruit`), gently pulsing.
 final class Food {
     private(set) var position: GridPoint
 
-    private let node: SKShapeNode
+    private let node: SKSpriteNode
     private let cellSize: CGFloat
     private let origin: CGPoint
 
@@ -14,14 +14,14 @@ final class Food {
         self.origin = origin
         self.position = GridGeometry.randomPosition(columns: columns, rows: rows, avoiding: occupied)
 
-        let diameter = cellSize - 4
-        node = SKShapeNode(circleOfRadius: diameter / 2)
-        // fillTexture is tinted (multiplied) by fillColor, so this needs to
-        // be white for the gradient's own colors to show through untouched.
-        node.fillColor = .white
-        node.fillTexture = Food.mangoGradientTexture(diameter: diameter)
-        node.strokeColor = .clear
+        node = SKSpriteNode(texture: SpriteArt.fruit(cellSize: cellSize))
         node.position = GridGeometry.position(for: position, cellSize: cellSize, origin: origin)
+
+        let swell = SKAction.scale(to: 1.12, duration: 0.9)
+        swell.timingMode = .easeInEaseOut
+        let settle = SKAction.scale(to: 1.0, duration: 0.9)
+        settle.timingMode = .easeInEaseOut
+        node.run(.repeatForever(.sequence([swell, settle])))
     }
 
     func addToScene(_ scene: SKScene) {
@@ -35,26 +35,5 @@ final class Food {
     func relocate(columns: Int, rows: Int, avoiding occupied: [GridPoint]) {
         position = GridGeometry.randomPosition(columns: columns, rows: rows, avoiding: occupied)
         node.position = GridGeometry.position(for: position, cellSize: cellSize, origin: origin)
-    }
-
-    /// Red-ish to orange-ish, diagonal -- a small one-off render, cheap
-    /// enough to redo per instance (Food is only created on eat/relocate,
-    /// never per frame).
-    private static func mangoGradientTexture(diameter: CGFloat) -> SKTexture {
-        let size = CGSize(width: diameter, height: diameter)
-        let renderer = UIGraphicsImageRenderer(size: size)
-        let image = renderer.image { context in
-            let colors = [UIColor.systemRed.cgColor, UIColor.systemOrange.cgColor] as CFArray
-            guard let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 1]) else {
-                return
-            }
-            context.cgContext.drawLinearGradient(
-                gradient,
-                start: CGPoint(x: 0, y: 0),
-                end: CGPoint(x: size.width, y: size.height),
-                options: []
-            )
-        }
-        return SKTexture(image: image)
     }
 }

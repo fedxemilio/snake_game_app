@@ -25,22 +25,23 @@ enum BombKind {
 
 /// A hazard: once placed, running the snake's head into one (without
 /// bomb-eater active) is a loss. `.mine` never relocates or expires; see
-/// `BombKind` for how `.timed` and `.drifter` differ. Visually pulses/glows
-/// so it reads as distinct from Food and PowerUp even though the base
-/// palette is similar -- a "mine" rather than a collectible.
+/// `BombKind` for how `.timed` and `.drifter` differ. Drawn as a horned sea
+/// mine with a light at its heart in its kind's color (`.barrel` is a banded
+/// cask instead), and pulses, so it reads as a hazard rather than a
+/// collectible.
 final class Bomb {
     let kind: BombKind
     private(set) var position: GridPoint
     private(set) var isExpired = false
 
-    private let node: SKShapeNode
+    private let node: SKSpriteNode
     private let cellSize: CGFloat
     private let origin: CGPoint
 
-    /// `.sensor`-only: a faint square outline over the 3x3 area this bomb
-    /// will hit, so its blast radius reads at a glance instead of being a
-    /// surprise. Brightens once armed (see `arm()`). nil for every other
-    /// kind.
+    /// `.sensor`-only: a faintly shaded square over the 3x3 area this bomb
+    /// will hit, so its blast radius reads at a glance instead of
+    /// being a surprise. Brightens once armed (see `arm()`). nil for every
+    /// other kind.
     private let vicinityIndicator: SKShapeNode?
 
     /// Real seconds remaining before a `.timed` bomb expires -- ticked in
@@ -84,28 +85,26 @@ final class Bomb {
             timeUntilNextDrift = Bomb.driftInterval
         }
 
-        let diameter = cellSize - 4
+        let texture: SKTexture
         switch kind {
         case .barrel:
             // Square is the one deliberate shape break -- every other kind
             // reads as a "mine" silhouette; barrel should look like a
             // different kind of object entirely.
-            node = SKShapeNode(rectOf: CGSize(width: diameter, height: diameter), cornerRadius: 3)
+            texture = SpriteArt.barrel(light: Bomb.lightColor(for: kind), cellSize: cellSize)
         case .mine, .timed, .drifter, .sensor:
-            node = SKShapeNode(circleOfRadius: diameter / 2)
+            texture = SpriteArt.seaMine(light: Bomb.lightColor(for: kind), ringed: kind == .sensor, cellSize: cellSize)
         }
-        node.fillColor = SKColor(white: 0.15, alpha: 1)
-        node.strokeColor = Bomb.strokeColor(for: kind)
-        node.lineWidth = 2
-        node.glowWidth = 6
+        node = SKSpriteNode(texture: texture)
         node.position = GridGeometry.position(for: position, cellSize: cellSize, origin: origin)
-        node.run(Bomb.pulseAction(scale: 1.2, duration: 0.6), withKey: Bomb.pulseActionKey)
+        node.run(Bomb.pulseAction(scale: Bomb.calmPulseScale, duration: 0.6), withKey: Bomb.pulseActionKey)
 
         if kind == .sensor {
-            let indicator = SKShapeNode(rectOf: CGSize(width: cellSize * 3 - 2, height: cellSize * 3 - 2))
-            indicator.fillColor = .clear
-            indicator.strokeColor = Bomb.strokeColor(for: .sensor).withAlphaComponent(0.35)
-            indicator.lineWidth = 1.5
+            let indicator = SKShapeNode(rectOf: CGSize(width: cellSize * 3 - 2, height: cellSize * 3 - 2), cornerRadius: cellSize * 0.3)
+            // Shaded, no outline: a faint wash over the blast area reads clearly
+            // without a hard edge competing with the board.
+            indicator.fillColor = Bomb.lightColor(for: .sensor).withAlphaComponent(0.08)
+            indicator.strokeColor = .clear
             indicator.position = node.position
             indicator.zPosition = -1
             vicinityIndicator = indicator
@@ -114,15 +113,21 @@ final class Bomb {
         }
     }
 
-    private static func strokeColor(for kind: BombKind) -> SKColor {
+    /// The light at each kind's heart, which also tints its glow.
+    private static func lightColor(for kind: BombKind) -> SKColor {
         switch kind {
-        case .mine: return .systemRed
-        case .timed: return .systemOrange
-        case .drifter: return .systemPink
-        case .sensor: return .systemIndigo
-        case .barrel: return .systemBrown
+        case .mine: return SKColor(red: 1.0, green: 0.27, blue: 0.27, alpha: 1)
+        case .timed: return SKColor(red: 1.0, green: 0.6, blue: 0.2, alpha: 1)
+        case .drifter: return SKColor(red: 1.0, green: 0.42, blue: 0.72, alpha: 1)
+        case .sensor: return SKColor(red: 0.5, green: 0.56, blue: 1.0, alpha: 1)
+        case .barrel: return SKColor(red: 1.0, green: 0.62, blue: 0.25, alpha: 1)
         }
     }
+
+    /// How far the slow, resting pulse swells, and the fast warning one. Kept
+    /// modest: the mine's horns already reach most of the way across its cell.
+    private static let calmPulseScale: CGFloat = 1.1
+    private static let warningPulseScale: CGFloat = 1.25
 
     private static func pulseAction(scale: CGFloat, duration: TimeInterval) -> SKAction {
         let pulseOut = SKAction.scale(to: scale, duration: duration)
@@ -160,9 +165,8 @@ final class Bomb {
         guard kind == .sensor, fuseRemaining == nil else { return }
         fuseRemaining = Bomb.sensorFuseDuration
         hasPlayedFuseWarning = true
-        node.run(Bomb.pulseAction(scale: 1.35, duration: 0.15), withKey: Bomb.pulseActionKey)
-        vicinityIndicator?.strokeColor = Bomb.strokeColor(for: .sensor).withAlphaComponent(0.75)
-        vicinityIndicator?.lineWidth = 2.5
+        node.run(Bomb.pulseAction(scale: Bomb.warningPulseScale, duration: 0.15), withKey: Bomb.pulseActionKey)
+        vicinityIndicator?.fillColor = Bomb.lightColor(for: .sensor).withAlphaComponent(0.2)
     }
 
     /// `.barrel`-only: triggered externally by a `.sensor` detonating within
@@ -191,9 +195,10 @@ final class Bomb {
     /// check once, against the row/column, not per tile) and just fades
     /// itself out.
     private func addBlastFlash(at point: GridPoint, scene: SKScene) {
-        let flash = SKShapeNode(rectOf: CGSize(width: cellSize - 2, height: cellSize - 2))
-        flash.fillColor = Bomb.strokeColor(for: .barrel).withAlphaComponent(0.5)
+        let flash = SKShapeNode(rectOf: CGSize(width: cellSize - 2, height: cellSize - 2), cornerRadius: cellSize * 0.2)
+        flash.fillColor = Bomb.lightColor(for: .barrel).withAlphaComponent(0.55)
         flash.strokeColor = .clear
+        flash.blendMode = .add
         flash.position = GridGeometry.position(for: point, cellSize: cellSize, origin: origin)
         flash.zPosition = -1
         scene.addChild(flash)
@@ -224,7 +229,7 @@ final class Bomb {
 
         if fuseRemaining! <= Bomb.fuseWarningThreshold && !hasPlayedFuseWarning {
             hasPlayedFuseWarning = true
-            node.run(Bomb.pulseAction(scale: 1.35, duration: 0.15), withKey: Bomb.pulseActionKey)
+            node.run(Bomb.pulseAction(scale: Bomb.warningPulseScale, duration: 0.15), withKey: Bomb.pulseActionKey)
         }
     }
 

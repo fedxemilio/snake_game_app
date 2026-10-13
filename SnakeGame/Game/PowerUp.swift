@@ -1,24 +1,19 @@
 import SpriteKit
 
 /// A rare, independent spawn. Comes in a few kinds (PowerUpKind), each its
-/// own color; GameManager decides when to spawn/despawn it and applies
-/// whatever effect the kind has.
+/// own color and symbol; GameManager decides when to spawn/despawn it and
+/// applies whatever effect the kind has.
 final class PowerUp {
     let kind: PowerUpKind
     private(set) var position: GridPoint
 
-    private let node: SKShapeNode
+    private let node: SKSpriteNode
 
     init(kind: PowerUpKind, columns: Int, rows: Int, cellSize: CGFloat, origin: CGPoint, avoiding occupied: [GridPoint]) {
         self.kind = kind
         position = GridGeometry.randomPosition(columns: columns, rows: rows, avoiding: occupied)
 
-        let color = PowerUp.color(for: kind)
-        node = SKShapeNode(circleOfRadius: (cellSize - 4) / 2)
-        node.fillColor = color
-        node.strokeColor = color
-        node.lineWidth = 1
-        node.glowWidth = 6
+        node = SKSpriteNode(texture: SpriteArt.powerUpOrb(color: PowerUp.color(for: kind), symbol: PowerUp.symbol(for: kind), cellSize: cellSize))
         node.position = GridGeometry.position(for: position, cellSize: cellSize, origin: origin)
 
         let floatDistance = cellSize * 0.18
@@ -39,9 +34,18 @@ final class PowerUp {
     /// while a bomb-eater is active, instead of duplicating the palette.
     static func color(for kind: PowerUpKind) -> SKColor {
         switch kind {
-        case .bombEater: return .systemPurple
-        case .tailCutter: return .systemYellow
-        case .speedCooler: return .systemCyan
+        case .bombEater: return SKColor(red: 0.66, green: 0.48, blue: 1.0, alpha: 1)
+        case .tailCutter: return SKColor(red: 1.0, green: 0.8, blue: 0.36, alpha: 1)
+        case .speedCooler: return SKColor(red: 0.42, green: 0.88, blue: 1.0, alpha: 1)
+        }
+    }
+
+    /// The SF Symbol on the orb's face: what the kind does, not just its color.
+    private static func symbol(for kind: PowerUpKind) -> String {
+        switch kind {
+        case .bombEater: return "shield.fill"
+        case .tailCutter: return "scissors"
+        case .speedCooler: return "snowflake"
         }
     }
 }
