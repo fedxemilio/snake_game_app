@@ -10,11 +10,12 @@ final class Walls {
     init(positions: Set<GridPoint>, cellSize: CGFloat, origin: CGPoint) {
         self.positions = positions
 
+        // Reef rock, in a few variants picked by position so the same wall always
+        // looks the same. All cells share those few textures, so even Adventure's
+        // hundreds of wall cells draw cheaply.
         for point in positions {
-            let node = SKShapeNode(rectOf: CGSize(width: cellSize, height: cellSize))
-            node.fillColor = SKColor(white: 0.5, alpha: 1)
-            node.strokeColor = SKColor(white: 0.7, alpha: 1)
-            node.lineWidth = 1
+            let variant = abs(point.x &* 73_856_093 ^ point.y &* 19_349_663) % SpriteArt.reefVariants
+            let node = SKSpriteNode(texture: SpriteArt.reefRock(cellSize: cellSize, variant: variant))
             node.position = GridGeometry.position(for: point, cellSize: cellSize, origin: origin)
             container.addChild(node)
         }

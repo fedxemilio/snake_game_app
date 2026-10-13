@@ -27,7 +27,7 @@ private struct DiveOrb<Label: View>: View {
 
     var body: some View {
         TimelineView(.animation(paused: reduceMotion)) { timeline in
-            let time = reduceMotion ? MenuClock.still : MenuClock.seconds(at: timeline.date)
+            let time = reduceMotion ? AmbientClock.still : AmbientClock.seconds(at: timeline.date)
             let beat = Heartbeat.strength(at: time)
             let intensity = min(1, (isPressed ? 0.45 : 0) + 0.35 + 0.65 * beat)
 

@@ -1,27 +1,30 @@
 import SwiftUI
 
-/// "SEA SNAKE" as carved, glowing letters riding a slow swell: each letter bobs and
-/// rocks on its own part of the wave, the glow behind them breathes, and every few
-/// seconds a band of water-light sweeps across their faces.
+/// Carved, glowing letters riding a slow swell: each letter bobs and rocks on its own
+/// part of the wave, the glow behind them breathes, and every few seconds a band of
+/// water-light sweeps across their faces. "SEA SNAKE" on the menu by default; the
+/// game's overlays pass their own lines.
 ///
 /// Like the math game's `FloatingText`, everything is drawn into one `Canvas` from a
 /// clock value, and the view has a fixed height so it lays out like a normal view.
 struct FloatingTitle: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    private struct Line {
+    struct Line {
         let text: String
         let fontSize: CGFloat
         let tracking: CGFloat
-        /// Vertical center of the line, as a fraction of the canvas height.
+        /// Vertical center of the line, as a fraction of the view's height.
         let centerY: CGFloat
     }
 
-    private static let lines = [
+    static let seaSnake = [
         Line(text: "SEA", fontSize: 30, tracking: 18, centerY: 0.24),
         Line(text: "SNAKE", fontSize: 70, tracking: 5, centerY: 0.64),
     ]
-    private static let height: CGFloat = 170
+
+    var lines: [Line] = FloatingTitle.seaSnake
+    var height: CGFloat = 170
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private static let foam = Color("Foam")
     private static let gold = Color("PaleGold")
@@ -37,14 +40,14 @@ struct FloatingTitle: View {
 
     var body: some View {
         TimelineView(.animation(paused: reduceMotion)) { timeline in
-            let time = reduceMotion ? MenuClock.still : MenuClock.seconds(at: timeline.date)
+            let time = reduceMotion ? AmbientClock.still : AmbientClock.seconds(at: timeline.date)
             Canvas { context, size in
-                Self.draw(time: time, size: size, in: context)
+                Self.draw(lines: lines, time: time, size: size, in: context)
             }
         }
-        .frame(height: Self.height)
+        .frame(height: height)
         .accessibilityElement()
-        .accessibilityLabel("Sea Snake")
+        .accessibilityLabel(lines.map(\.text).joined(separator: " ").capitalized)
         .accessibilityAddTraits(.isHeader)
     }
 
@@ -55,8 +58,8 @@ struct FloatingTitle: View {
         let tilt: Double
     }
 
-    private static func draw(time: Double, size: CGSize, in context: GraphicsContext) {
-        let glyphs = layOut(time: time, size: size, in: context)
+    private static func draw(lines: [Line], time: Double, size: CGSize, in context: GraphicsContext) {
+        let glyphs = layOut(lines: lines, time: time, size: size, in: context)
         let breath = 0.5 + 0.5 * sin(time * 2 * .pi / 5.5)
 
         // The glow, matching the style guide's title text-shadow (a foam glow inside a
@@ -126,8 +129,8 @@ struct FloatingTitle: View {
     }
 
     /// Where every letter is this frame: laid out on its line, then lifted and rocked
-    /// by the swell. The wave runs left to right through both lines as one sequence.
-    private static func layOut(time: Double, size: CGSize, in context: GraphicsContext) -> [Glyph] {
+    /// by the swell. The wave runs left to right through all the lines as one sequence.
+    private static func layOut(lines: [Line], time: Double, size: CGSize, in context: GraphicsContext) -> [Glyph] {
         var glyphs: [Glyph] = []
         var sequence = 0
 

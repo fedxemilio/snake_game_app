@@ -5,9 +5,9 @@ import SwiftUI
 /// style-guide gradient: murk, light shafts, caustics, the odd flash of lightning
 /// overhead), with the deep's inhabitants drifting in front of it.
 ///
-/// Everything is a pure function of `MenuClock`, so nothing is stored or stepped.
+/// Everything is a pure function of `AmbientClock`, so nothing is stored or stepped.
 /// Reduce Motion swaps the moving water for the plain `SeaBackground` gradient and
-/// freezes the sea life at `MenuClock.still`.
+/// freezes the sea life at `AmbientClock.still`.
 struct LivingSea: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var water = AbyssWaterScene()
@@ -35,9 +35,9 @@ struct LivingSea: View {
     static func lightning(at time: Double) -> Double {
         let period = 17.0
         let cycle = Int((time / period).rounded(.down))
-        guard MenuClock.random(cycle, salt: 7) > 0.3 else { return 0 }
+        guard AmbientClock.random(cycle, salt: 7) > 0.3 else { return 0 }
 
-        let strikeAt = 3 + 10 * MenuClock.random(cycle, salt: 8)
+        let strikeAt = 3 + 10 * AmbientClock.random(cycle, salt: 8)
         let age = time - Double(cycle) * period - strikeAt
         guard age >= 0 else { return 0 }
 
@@ -55,7 +55,7 @@ private struct DeepSeaLife: View {
     var body: some View {
         TimelineView(.animation(paused: !isAnimated)) { timeline in
             Canvas { context, size in
-                let time = isAnimated ? MenuClock.seconds(at: timeline.date) : MenuClock.still
+                let time = isAnimated ? AmbientClock.seconds(at: timeline.date) : AmbientClock.still
 
                 // Far to near, so nearer things cross in front.
                 LurkingSerpent.paint(time: time, size: size, in: context)
@@ -72,18 +72,21 @@ private struct DeepSeaLife: View {
     /// Specks of debris sinking and meandering. Each has a depth that sets its size,
     /// brightness and speed, so the field has parallax.
     private static func marineSnow(time: Double, size: CGSize, in context: GraphicsContext) {
+        // All in Double: mixing in CGFloat here leaves the type checker timing out.
+        let width = Double(size.width)
+        let height = Double(size.height)
         for index in 0..<70 {
-            let depth = MenuClock.random(index, salt: 1)   // 0 far ... 1 near
+            let depth = AmbientClock.random(index, salt: 1)   // 0 far ... 1 near
             let radius = 0.5 + 1.5 * depth
             let fall = 3 + 11 * depth
-            let drift = 2 + 5 * MenuClock.random(index, salt: 2)
+            let drift = 2 + 5 * AmbientClock.random(index, salt: 2)
 
-            let travel = size.height + 10
-            let y = (MenuClock.random(index, salt: 3) * travel + time * fall)
+            let travel = height + 10
+            let y = (AmbientClock.random(index, salt: 3) * travel + time * fall)
                 .truncatingRemainder(dividingBy: travel) - 5
             let meander = 9 * sin(time * 0.35 + Double(index) * 1.7)
-            let x = (MenuClock.random(index, salt: 4) * size.width + time * drift + meander)
-                .truncatingRemainder(dividingBy: size.width + 10) - 5
+            let x = (AmbientClock.random(index, salt: 4) * width + time * drift + meander)
+                .truncatingRemainder(dividingBy: width + 10) - 5
 
             context.fill(
                 Path(ellipseIn: CGRect(x: x - radius, y: y - radius, width: radius * 2, height: radius * 2)),
@@ -98,18 +101,18 @@ private struct DeepSeaLife: View {
         context.drawLayer { layer in
             layer.blendMode = .plusLighter
             for index in 0..<18 {
-                let rate = 0.25 + 0.35 * MenuClock.random(index, salt: 5)
-                let wave = sin(time * rate + 6.3 * MenuClock.random(index, salt: 6))
+                let rate = 0.25 + 0.35 * AmbientClock.random(index, salt: 5)
+                let wave = sin(time * rate + 6.3 * AmbientClock.random(index, salt: 6))
                 let brightness = pow(max(0, wave), 5)
                 guard brightness > 0.01 else { continue }
 
                 let center = CGPoint(
-                    x: size.width * (0.05 + 0.9 * MenuClock.random(index, salt: 7))
+                    x: size.width * (0.05 + 0.9 * AmbientClock.random(index, salt: 7))
                         + 18 * sin(time * 0.11 + Double(index)),
-                    y: size.height * (0.1 + 0.85 * MenuClock.random(index, salt: 8))
+                    y: size.height * (0.1 + 0.85 * AmbientClock.random(index, salt: 8))
                         + 14 * cos(time * 0.09 + Double(index) * 2.3)
                 )
-                let haloRadius = 9 + 7 * MenuClock.random(index, salt: 9)
+                let haloRadius = 9 + 7 * AmbientClock.random(index, salt: 9)
 
                 layer.fill(
                     Path(ellipseIn: CGRect(
@@ -132,14 +135,14 @@ private struct DeepSeaLife: View {
     /// A few small bubbles wobbling up from the deep and wrapping back to the bottom.
     private static func bubbles(time: Double, size: CGSize, in context: GraphicsContext) {
         for index in 0..<10 {
-            let radius = 1.8 + 4.5 * MenuClock.random(index, salt: 10)
-            let speed = 14 + 26 * MenuClock.random(index, salt: 11)
+            let radius = 1.8 + 4.5 * AmbientClock.random(index, salt: 10)
+            let speed = 14 + 26 * AmbientClock.random(index, salt: 11)
             let travel = size.height + 4 * radius
-            let progress = (time * speed / travel + MenuClock.random(index, salt: 12))
+            let progress = (time * speed / travel + AmbientClock.random(index, salt: 12))
                 .truncatingRemainder(dividingBy: 1)
 
             let center = CGPoint(
-                x: size.width * (0.06 + 0.88 * MenuClock.random(index, salt: 13))
+                x: size.width * (0.06 + 0.88 * AmbientClock.random(index, salt: 13))
                     + (3 + radius) * sin(time * 2.2 + Double(index)),
                 y: size.height + 2 * radius - travel * progress
             )

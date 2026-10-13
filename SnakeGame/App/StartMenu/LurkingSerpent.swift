@@ -5,7 +5,7 @@ import SwiftUI
 /// back, lights rippling down its flank and one pale eye.
 ///
 /// Stateless, like the rest of the menu's drawing: each pass's depth, size, heading
-/// and route come from `MenuClock.random` seeded with the pass number, and its body is
+/// and route come from `AmbientClock.random` seeded with the pass number, and its body is
 /// worked out fresh each frame from the clock.
 enum LurkingSerpent {
     /// Seconds from the start of one pass to the next. The gap after `swimDuration`
@@ -31,12 +31,12 @@ enum LurkingSerpent {
         // heading. Passes alternate between the two stretches of open water the menu
         // leaves: overhead, above the title, and the gap between the title and the
         // mode picker. Anywhere else it would spend the pass hidden behind the UI.
-        let scale = 0.8 + 0.4 * CGFloat(MenuClock.random(pass, salt: 20))
+        let scale = 0.8 + 0.4 * CGFloat(AmbientClock.random(pass, salt: 20))
         let isOverhead = pass.isMultiple(of: 2)
         let baseY = size.height * (isOverhead ? 0.12 : 0.385)
-            + size.height * 0.03 * CGFloat(MenuClock.random(pass, salt: 21) - 0.5)
-        let routePhase = 6.3 * MenuClock.random(pass, salt: 22)
-        let heading: CGFloat = MenuClock.random(pass, salt: 23) < 0.5 ? 1 : -1
+            + size.height * 0.03 * CGFloat(AmbientClock.random(pass, salt: 21) - 0.5)
+        let routePhase = 6.3 * AmbientClock.random(pass, salt: 22)
+        let heading: CGFloat = AmbientClock.random(pass, salt: 23) < 0.5 ? 1 : -1
 
         let spacing = 8 * scale
         let length = spacing * CGFloat(spineCount - 1)

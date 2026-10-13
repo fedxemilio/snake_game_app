@@ -1,14 +1,15 @@
 import Foundation
 
-/// The one clock every animated piece of the start menu reads, so the water, the sea
-/// life, the title and the button all agree on what moment it is.
+/// The one clock every ambient animation reads (the menu's water, sea life, title and
+/// button, and the water behind the game board), so they all agree on what moment
+/// it is.
 ///
 /// Counts from the first time anything reads it (in practice, the first frame of the
 /// menu at launch) rather than using `timeIntervalSinceReferenceDate`: that's hundreds
 /// of millions of seconds, too big to survive the trip into the water shader's 32-bit
 /// `float` without the motion turning steppy. It keeps running across trips into a
 /// game and back, so the serpent's passes carry on where they were.
-enum MenuClock {
+enum AmbientClock {
     private static let start = Date()
 
     /// Seconds since the clock started at `date`.

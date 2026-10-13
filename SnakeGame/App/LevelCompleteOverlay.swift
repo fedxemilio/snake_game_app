@@ -1,33 +1,52 @@
 import SwiftUI
 
 /// Mostly transparent so the frozen board stays visible underneath --
-/// tapping anywhere begins the next level.
+/// tapping anywhere begins the next level. A floating carved "LEVEL
+/// CLEARED" in the start menu's style, over a light veil of murk.
 struct LevelCompleteOverlay: View {
     let onContinue: () -> Void
 
+    @State private var isCaptionBright = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private static let title = [
+        FloatingTitle.Line(text: "LEVEL", fontSize: 28, tracking: 16, centerY: 0.26),
+        FloatingTitle.Line(text: "CLEARED", fontSize: 54, tracking: 4, centerY: 0.66),
+    ]
+
     var body: some View {
         ZStack {
-            Color.black.opacity(0.15)
+            Color("Abyss").opacity(0.4)
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
                 .onTapGesture(perform: onContinue)
+                .accessibilityLabel("Begin next level")
+                .accessibilityAddTraits(.isButton)
 
-            VStack(spacing: 10) {
-                Text("Level Complete!")
-                    .font(.system(size: 32, weight: .heavy, design: .rounded))
-                    .foregroundStyle(.white)
-                    .shadow(color: .black.opacity(0.6), radius: 6)
+            VStack(spacing: 4) {
+                FloatingTitle(lines: Self.title, height: 140)
 
-                Text("tap to begin next level")
-                    .font(.system(size: 16, weight: .medium, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.85))
-                    .shadow(color: .black.opacity(0.6), radius: 4)
+                Text("tap to dive deeper")
+                    .font(.custom("Work Sans", size: 15))
+                    .foregroundStyle(Color("Foam").opacity(isCaptionBright ? 0.85 : 0.45))
             }
             .allowsHitTesting(false)
+        }
+        .onAppear {
+            guard !reduceMotion else {
+                isCaptionBright = true
+                return
+            }
+            withAnimation(.easeInOut(duration: 1.2).repeatForever()) {
+                isCaptionBright = true
+            }
         }
     }
 }
 
 #Preview {
-    LevelCompleteOverlay(onContinue: {})
+    ZStack {
+        SeaBackground()
+        LevelCompleteOverlay(onContinue: {})
+    }
 }

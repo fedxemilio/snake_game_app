@@ -15,13 +15,16 @@ final class Snake {
     private var pendingDirection: Direction
 
     private let container = SKNode()
-    private var segmentNodes: [SKShapeNode] = []
+    /// Segment 0's sprite: it has a face and turns to point the way the snake is going.
+    private let headNode: SegmentSprite
+    /// Sprites for segments 1..., reused tick to tick (see `syncNodes`).
+    private var bodyNodes: [SegmentSprite] = []
     private let cellSize: CGFloat
     private let origin: CGPoint
     private let minimumLength: Int
 
-    private static let defaultBodyColor: SKColor = .systemGreen
-    private var bodyColor: SKColor = defaultBodyColor
+    /// Set while a power-up tints the whole snake; nil for its natural colors.
+    private var tint: SKColor?
     private var isGlowing = false
     private var glowColor: SKColor = .clear
 
@@ -53,6 +56,13 @@ final class Snake {
         self.origin = origin
         self.minimumLength = length
         self.segments = Snake.horizontalSegments(head: head, length: length)
+
+        headNode = SegmentSprite(texture: SpriteArt.snakeHead(cellSize: cellSize), auraTexture: SpriteArt.snakeAura(cellSize: cellSize))
+        headNode.zPosition = 2
+        let face = SKSpriteNode(texture: SpriteArt.snakeFace(cellSize: cellSize))
+        face.zPosition = 0.5
+        headNode.addChild(face)
+        container.addChild(headNode)
     }
 
     private static func horizontalSegments(head: GridPoint, length: Int) -> [GridPoint] {
@@ -147,12 +157,12 @@ final class Snake {
     /// Tints the whole snake (e.g. while a timed power-up is active).
     /// `resetBodyColor()` returns it to normal.
     func setBodyColor(_ color: SKColor) {
-        bodyColor = color
+        tint = color
         syncNodes()
     }
 
     func resetBodyColor() {
-        bodyColor = Snake.defaultBodyColor
+        tint = nil
         syncNodes()
     }
 
@@ -312,24 +322,81 @@ final class Snake {
     /// Reuses existing nodes and only repositions them; nodes are created or
     /// removed solely when the segment count itself changes.
     private func syncNodes() {
-        while segmentNodes.count < segments.count {
-            let node = SKShapeNode(rectOf: CGSize(width: cellSize - 2, height: cellSize - 2), cornerRadius: 4)
+        let bodyCount = segments.count - 1
+        while bodyNodes.count < bodyCount {
+            let node = SegmentSprite(texture: SpriteArt.snakeBody(cellSize: cellSize), auraTexture: SpriteArt.snakeAura(cellSize: cellSize))
+            node.zPosition = 1
             container.addChild(node)
-            segmentNodes.append(node)
+            bodyNodes.append(node)
         }
-        while segmentNodes.count > segments.count {
-            segmentNodes.removeLast().removeFromParent()
+        while bodyNodes.count > bodyCount {
+            bodyNodes.removeLast().removeFromParent()
         }
 
-        for (index, point) in segments.enumerated() {
-            let node = segmentNodes[index]
-            node.position = GridGeometry.position(for: point, cellSize: cellSize, origin: origin)
-            node.fillColor = index == 0 ? bodyColor : bodyColor.withAlphaComponent(0.7)
-            node.strokeColor = isGlowing ? glowColor : .clear
-            node.glowWidth = isGlowing ? 5 : 0
+        let glow = isGlowing ? glowColor : nil
+        headNode.position = GridGeometry.position(for: head, cellSize: cellSize, origin: origin)
+        headNode.zRotation = Snake.angle(facing: direction)
+        headNode.style(tint: tint, glow: glow)
+
+        let bodyTexture = SpriteArt.snakeBody(cellSize: cellSize)
+        let tailTexture = SpriteArt.snakeTail(cellSize: cellSize)
+        // Never taper the neck: a three-long snake tapers only its tail.
+        let taperCount = min(Snake.tailTaperLength, max(0, bodyCount - 1))
+
+        for (offset, node) in bodyNodes.enumerated() {
+            let index = offset + 1
+            node.position = GridGeometry.position(for: segments[index], cellSize: cellSize, origin: origin)
+            // Fades a little toward the tail, so the snake's length reads at a glance.
+            node.alpha = 1 - 0.3 * CGFloat(index) / CGFloat(segments.count)
+            node.style(tint: tint, glow: glow)
+
+            // The last few segments narrow toward the tail, and the very last is a
+            // point. Only across the body, never along it, so no gaps open up
+            // between segments.
+            let fromTail = bodyCount - 1 - offset
+            let width = fromTail < taperCount ? 0.5 + 0.5 * CGFloat(fromTail + 1) / CGFloat(taperCount + 1) : 1
+            let towardHead = Snake.step(from: segments[index], to: segments[index - 1])
+
+            if fromTail == 0 {
+                node.texture = tailTexture
+                // Points away from the body; scaled across it in its own rotated frame.
+                node.zRotation = atan2(CGFloat(-towardHead.dy), CGFloat(-towardHead.dx))
+                node.xScale = 1
+                node.yScale = width
+                // Under the segment before it, which hides the tail's base.
+                node.zPosition = 0.9
+            } else {
+                node.texture = bodyTexture
+                node.zRotation = 0
+                node.xScale = towardHead.dx == 0 ? width : 1
+                node.yScale = towardHead.dx == 0 ? 1 : width
+                node.zPosition = 1
+            }
         }
 
         syncGrowthIndicator()
+    }
+
+    /// How many segments, counting the tail itself, narrow toward the tail tip.
+    private static let tailTaperLength = 4
+
+    /// The one-cell step from `point` to its neighbor `next`, undoing a wrap across
+    /// the grid's edge (where the raw difference is the grid's width or height, not 1).
+    private static func step(from point: GridPoint, to next: GridPoint) -> (dx: Int, dy: Int) {
+        func unwrap(_ delta: Int) -> Int {
+            abs(delta) > 1 ? (delta > 0 ? -1 : 1) : delta
+        }
+        return (unwrap(next.x - point.x), unwrap(next.y - point.y))
+    }
+
+    /// The head's texture faces right; this turns it to face `direction`.
+    private static func angle(facing direction: Direction) -> CGFloat {
+        switch direction {
+        case .right: return 0
+        case .up: return .pi / 2
+        case .left: return .pi
+        case .down: return -.pi / 2
+        }
     }
 
     /// Purely cosmetic preview of a deferred (halved-growth) fruit: a small
@@ -356,6 +423,36 @@ final class Snake {
         }()
         node.isHidden = false
         node.position = GridGeometry.position(for: trailingPoint, cellSize: cellSize, origin: origin)
-        node.fillColor = bodyColor.withAlphaComponent(0.45)
+        node.fillColor = (tint ?? SKColor(named: "SnakeBodyStart") ?? .systemTeal).withAlphaComponent(0.45)
+    }
+}
+
+/// One segment's sprite, plus a halo behind it for the bomb-eater grace glow. Tinting
+/// is SpriteKit's color blend rather than a separate texture, so a power-up color can
+/// wash over the gradient without any extra art.
+private final class SegmentSprite: SKSpriteNode {
+    private let aura: SKSpriteNode
+
+    init(texture: SKTexture, auraTexture: SKTexture) {
+        aura = SKSpriteNode(texture: auraTexture)
+        super.init(texture: texture, color: .white, size: texture.size())
+        aura.zPosition = -1
+        aura.blendMode = .add
+        aura.colorBlendFactor = 1
+        aura.isHidden = true
+        addChild(aura)
+    }
+
+    required init?(coder aDecoder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func style(tint: SKColor?, glow: SKColor?) {
+        color = tint ?? .white
+        colorBlendFactor = tint == nil ? 0 : 0.7
+        aura.isHidden = glow == nil
+        if let glow {
+            aura.color = glow
+        }
     }
 }

@@ -11,11 +11,18 @@ final class GameScene: SKScene {
     private static let adventureCellSize: CGFloat = 24
 
     private var gameManager: GameManager!
-    private var scoreLabel: SKLabelNode!
+
+    /// The deep water behind everything (see `AbyssWaterNode`), calmer than the
+    /// menu's so the board stays easy to read.
+    private let water = AbyssWaterNode(energy: 0.45)
+
+    /// Matches the system setting when the scene starts: the water holds still and
+    /// the marine snow is left out.
+    private let reduceMotion = UIAccessibility.isReduceMotionEnabled
 
     /// Non-nil only in .adventure mode. Its presence is also what tells
-    /// setUpScoreLabel() and update() to do camera-relative HUD placement
-    /// and per-frame following, respectively.
+    /// setUpMarineSnow() and update() to do camera-relative placement and
+    /// per-frame following, respectively.
     private var cameraNode: SKCameraNode?
     private var worldSize: CGSize = .zero
 
@@ -30,6 +37,10 @@ final class GameScene: SKScene {
     /// Fired once, when a run ends. The Game Over UI itself lives in
     /// SwiftUI (GameOverOverlay), not in the scene.
     var onGameOver: (() -> Void)?
+
+    /// Fired whenever the score changes (including the reset to 0 at the start
+    /// of a run). The score HUD lives in SwiftUI, like the overlays.
+    var onScoreChanged: ((Int) -> Void)?
 
     /// Fired each time a level's threshold is hit (.levels mode only). Same
     /// pattern as onGameOver -- the overlay lives in SwiftUI.
@@ -57,14 +68,18 @@ final class GameScene: SKScene {
     }
 
     override func didMove(to view: SKView) {
-        backgroundColor = SKColor(red: 0.03, green: 0.09, blue: 0.22, alpha: 1)
+        backgroundColor = SKColor(named: "Abyss") ?? .black
 
         let cellSize: CGFloat
         let origin: CGPoint
         switch mode {
         case .freePlay, .levels:
-            let cellWidth = size.width / CGFloat(columns)
-            let cellHeight = size.height / CGFloat(rows)
+            // Free play leaves room around the grid for its board panel's
+            // rounded edge and glow; at 16 columns it would otherwise run
+            // edge to edge and the panel would spill off the screen.
+            let margin: CGFloat = mode == .freePlay ? 14 : 0
+            let cellWidth = (size.width - margin * 2) / CGFloat(columns)
+            let cellHeight = (size.height - margin * 2) / CGFloat(rows)
             cellSize = min(cellWidth, cellHeight)
             origin = CGPoint(
                 x: (size.width - CGFloat(columns) * cellSize) / 2,
@@ -79,7 +94,7 @@ final class GameScene: SKScene {
 
         gameManager = GameManager(scene: self, mode: mode, columns: columns, rows: rows, cellSize: cellSize, origin: origin)
         gameManager.onScoreChanged = { [weak self] score in
-            self?.scoreLabel.text = "Score: \(score)"
+            self?.onScoreChanged?(score)
         }
         gameManager.onGameOver = { [weak self] in
             self?.onGameOver?()
@@ -88,15 +103,17 @@ final class GameScene: SKScene {
             self?.onLevelComplete?()
         }
 
-        // Free-play's grid doesn't fill the screen, so a border marks its
+        setUpWater()
+
+        // Free-play's grid doesn't fill the screen, so a board panel marks its
         // wrap boundary. Levels mode and Adventure mode already use (most
         // of, or far more than) the screen, so the edge is visible on its
         // own -- Adventure's map even has its own border walls baked in.
         if mode == .freePlay {
-            drawGridBorder(cellSize: cellSize, origin: origin)
+            drawBoard(cellSize: cellSize, origin: origin)
         }
 
-        setUpScoreLabel()
+        setUpMarineSnow()
         setUpInputGesture(on: view)
         gameManager.startNewGame()
 
@@ -119,39 +136,63 @@ final class GameScene: SKScene {
 
     // MARK: - Setup
 
-    private func drawGridBorder(cellSize: CGFloat, origin: CGPoint) {
-        let rect = CGRect(
-            x: origin.x,
-            y: origin.y,
-            width: CGFloat(columns) * cellSize,
-            height: CGFloat(rows) * cellSize
-        )
-        let border = SKShapeNode(rect: rect)
-        border.strokeColor = SKColor.white.withAlphaComponent(0.25)
-        border.lineWidth = 2
-        border.fillColor = .clear
-        border.zPosition = -1
-        addChild(border)
+    /// The water covers the screen, or in Adventure the whole map: there it stays
+    /// put while the camera moves over it, so the water darkens toward the bottom
+    /// of the map like real depth, and drifts past as the snake swims.
+    private func setUpWater() {
+        water.size = mode == .adventure ? worldSize : size
+        water.zPosition = -10
+        water.update(time: AmbientClock.still)
+        addChild(water)
     }
 
-    private func setUpScoreLabel() {
-        scoreLabel = SKLabelNode(fontNamed: "Menlo-Bold")
-        scoreLabel.text = "Score: 0"
-        scoreLabel.fontSize = 20
-        scoreLabel.fontColor = .white
-        scoreLabel.horizontalAlignmentMode = .left
-        scoreLabel.zPosition = 10
+    /// The style guide's board panel around the free-play grid, padded a little
+    /// so its rounded corners don't clip the corner cells.
+    private func drawBoard(cellSize: CGFloat, origin: CGPoint) {
+        let padding: CGFloat = 6
+        let gridSize = CGSize(width: CGFloat(columns) * cellSize, height: CGFloat(rows) * cellSize)
+        let boardSize = CGSize(width: gridSize.width + padding * 2, height: gridSize.height + padding * 2)
+
+        let board = SKSpriteNode(texture: SpriteArt.board(size: boardSize, cornerRadius: 20))
+        board.position = CGPoint(x: origin.x + gridSize.width / 2, y: origin.y + gridSize.height / 2)
+        board.zPosition = -5
+        addChild(board)
+    }
+
+    /// Specks of marine snow sinking slowly behind the board. In Adventure the
+    /// emitter rides along the top of the camera's view, but its specks are
+    /// left behind in the world (`targetNode`), so they scroll past like the
+    /// water does.
+    private func setUpMarineSnow() {
+        guard !reduceMotion else { return }
+
+        let snow = SKEmitterNode()
+        snow.particleTexture = SpriteArt.speck()
+        snow.particleBirthRate = 3
+        snow.particleLifetime = 26
+        snow.particlePositionRange = CGVector(dx: size.width * 1.2, dy: 0)
+        snow.emissionAngle = -.pi / 2
+        snow.emissionAngleRange = 0.5
+        snow.particleSpeed = 30
+        snow.particleSpeedRange = 18
+        snow.particleAlpha = 0.28
+        snow.particleAlphaRange = 0.18
+        snow.particleScale = 0.45
+        snow.particleScaleRange = 0.35
+        snow.particleColor = SKColor(named: "Foam") ?? .white
+        snow.particleColorBlendFactor = 1
+        snow.zPosition = -8
 
         if let cameraNode {
-            // A camera's children are positioned relative to *its own*
-            // center, not the scene origin -- this is what keeps the HUD
-            // pinned to the screen as the camera pans around the world.
-            scoreLabel.position = CGPoint(x: -size.width / 2 + 16, y: size.height / 2 - 40)
-            cameraNode.addChild(scoreLabel)
+            snow.position = CGPoint(x: 0, y: size.height / 2 + 10)
+            snow.targetNode = self
+            cameraNode.addChild(snow)
         } else {
-            scoreLabel.position = CGPoint(x: 16, y: size.height - 40)
-            addChild(scoreLabel)
+            snow.position = CGPoint(x: size.width / 2, y: size.height + 10)
+            addChild(snow)
         }
+        // Start with the screen already full of snow rather than a first fall.
+        snow.advanceSimulationTime(24)
     }
 
     /// Adventure mode only: a camera the snake's head drives, clamped so
@@ -216,6 +257,9 @@ final class GameScene: SKScene {
         gameManager.tick(currentTime: currentTime)
         if mode == .adventure {
             updateCamera()
+        }
+        if !reduceMotion {
+            water.update(time: AmbientClock.seconds(at: Date()))
         }
     }
 }
