@@ -17,6 +17,8 @@ final class GameManager {
     private var powerUp: PowerUp?
     private var bombs: [Bomb] = []
     private var walls: Walls?
+    /// Adventure mode's boss. Nil in the other modes.
+    private var kraken: Kraken?
 
     /// Index into Level.all. Only meaningful in .levels mode.
     private var currentLevelIndex = 0
@@ -98,11 +100,30 @@ final class GameManager {
     private var timeSinceLastMove: TimeInterval = 0
     private var lastUpdateTime: TimeInterval = 0
 
+    /// Lives per run: three in Adventure, one elsewhere (so in Free play and
+    /// Levels any hit still ends the run, exactly as before).
+    private var maxLives: Int { mode == .adventure ? 3 : 1 }
+    private(set) var lives = 0
+    /// After a hit that doesn't end the run, the snake blinks and can't be hurt
+    /// again for this long, in real seconds (like bomb-eater's timer). Walls
+    /// still stop it; they just don't cost a life until this runs out.
+    private let hitGraceDuration: TimeInterval = 2.0
+    private var hitGraceRemaining: TimeInterval = 0
+    /// True while the snake is stopped against a barrier, so the kraken aims at
+    /// where it is rather than where it was headed.
+    private var isSnakeBlocked = false
+
     private(set) var isGameOver = false
     private(set) var score = 0
 
     var onScoreChanged: ((Int) -> Void)?
     var onGameOver: (() -> Void)?
+    /// The boss's remaining lives whenever they change, or nil when there's no
+    /// boss this run (anything but Adventure).
+    var onBossLivesChanged: ((Int?) -> Void)?
+    /// The snake's remaining lives whenever they change, or nil in modes where it
+    /// only has the one (there's nothing to show).
+    var onLivesChanged: ((Int?) -> Void)?
 
     init(scene: SKScene, mode: GameMode, columns: Int, rows: Int, cellSize: CGFloat, origin: CGPoint) {
         self.scene = scene
@@ -122,9 +143,14 @@ final class GameManager {
         bombs.removeAll()
         walls?.removeFromScene()
         walls = nil
+        kraken?.removeFromScene()
+        kraken = nil
 
         isGameOver = false
         score = 0
+        lives = maxLives
+        hitGraceRemaining = 0
+        isSnakeBlocked = false
         moveInterval = startingMoveInterval
         timeSinceLastMove = 0
         lastUpdateTime = 0
@@ -134,7 +160,8 @@ final class GameManager {
         levelProgress = 0
         isAwaitingNextLevel = false
 
-        let start = GridPoint(x: columns / 2, y: rows / 2)
+        // Adventure's middle belongs to the kraken.
+        let start = mode == .adventure ? AdventureMap.snakeStart : GridPoint(x: columns / 2, y: rows / 2)
         let newSnake = Snake(startingAt: start, length: 3, direction: .right, cellSize: cellSize, origin: origin)
         if let scene {
             newSnake.addToScene(scene)
@@ -150,6 +177,12 @@ final class GameManager {
                 newWalls.addToScene(scene)
             }
             walls = newWalls
+
+            let newKraken = Kraken(center: AdventureMap.krakenLair, columns: columns, rows: rows, cellSize: cellSize, origin: origin)
+            if let scene {
+                newKraken.addToScene(scene)
+            }
+            kraken = newKraken
         case .freePlay:
             break
         }
@@ -161,12 +194,14 @@ final class GameManager {
         food = newFood
 
         onScoreChanged?(score)
+        onBossLivesChanged?(kraken?.lives)
+        onLivesChanged?(maxLives > 1 ? lives : nil)
     }
 
-    /// The snake's own body plus the current level's walls, if any -- the
-    /// baseline every spawn/relocate call should avoid landing on.
+    /// The snake's own body plus the current level's walls and the kraken's lair,
+    /// if any -- the baseline every spawn/relocate call should avoid landing on.
     private var occupiedBySnakeAndWalls: [GridPoint] {
-        snake.segments + Array(walls?.positions ?? [])
+        snake.segments + Array(walls?.positions ?? []) + Array(kraken?.footprint ?? [])
     }
 
     /// `occupiedBySnakeAndWalls` plus every current bomb position -- food
@@ -178,7 +213,7 @@ final class GameManager {
     }
 
     /// World-space position of the snake's head -- GameScene uses this to
-    /// drive Adventure mode's camera. Meaningless (but harmless) elsewhere.
+    /// drive Adventure mode's camera, and the kraken's eyes follow it.
     var headWorldPosition: CGPoint {
         GridGeometry.position(for: snake.head, cellSize: cellSize, origin: origin)
     }
@@ -198,14 +233,26 @@ final class GameManager {
         lastUpdateTime = currentTime
 
         updateBombEaterTimer(delta: delta)
+        hitGraceRemaining = max(0, hitGraceRemaining - delta)
         updateBombs(delta: delta)
+        guard !isGameOver else { return }
+        updateKraken(delta: delta)
         guard !isGameOver else { return }
 
         timeSinceLastMove += delta
         guard timeSinceLastMove >= moveInterval else { return }
         timeSinceLastMove = 0
 
-        switch snake.advance(columns: columns, rows: rows, foodPosition: food.position, halvedGrowth: mode == .levels) {
+        let result = snake.advance(
+            columns: columns,
+            rows: rows,
+            foodPosition: food.position,
+            halvedGrowth: mode == .levels,
+            isBlocked: isBarrier
+        )
+        isSnakeBlocked = result == .blocked
+
+        switch result {
         case .moved:
             break
         case .ateFood:
@@ -217,17 +264,12 @@ final class GameManager {
             if mode == .levels {
                 advanceLevelProgress()
             }
-        case .collided:
-            isGameOver = true
-            onGameOver?()
-            return
-        }
-
-        // Walls are absolute -- no power-up grants immunity to them, so this
-        // is checked immediately, unlike the bomb-eater/bomb interplay below.
-        if let walls, walls.contains(snake.head) {
-            isGameOver = true
-            onGameOver?()
+        case .blocked:
+            // Stopped against a wall, the lair or its own body: it stays put, and
+            // every tick it's still pressing in tries to hurt it, which only lands
+            // once the grace period from the last hit is over. No power-up
+            // protects against this. Nothing else happens on a tick it didn't move.
+            hurtPlayer()
             return
         }
 
@@ -242,16 +284,18 @@ final class GameManager {
             self.powerUp = nil
         }
 
+        // Touching a bomb sets it off: it's gone either way, and it costs a life
+        // unless bomb-eater is active (or the snake is still in its grace
+        // period). If that was the last life, the bomb stays on screen under the
+        // head, so the game-over freeze shows what did it.
         let bombsAtHead = bombs.filter { $0.position == snake.head }
         if !bombsAtHead.isEmpty {
-            if isBombEaterActive {
-                bombsAtHead.forEach { $0.removeFromScene() }
-                bombs.removeAll { $0.position == snake.head }
-            } else {
-                isGameOver = true
-                onGameOver?()
-                return
+            if !isBombEaterActive {
+                hurtPlayer()
+                guard !isGameOver else { return }
             }
+            bombsAtHead.forEach { $0.removeFromScene() }
+            bombs.removeAll { $0.position == snake.head }
         }
 
         attemptPowerUpSpawn()
@@ -480,9 +524,8 @@ final class GameManager {
         let vicinity = GameManager.vicinity(of: position, columns: columns, rows: rows)
 
         if !isBombEaterActive && vicinity.contains(snake.head) {
-            isGameOver = true
-            onGameOver?()
-            return
+            hurtPlayer()
+            guard !isGameOver else { return }
         }
 
         let minesToRemove = bombs.filter { $0.kind == .mine && vicinity.contains($0.position) }
@@ -499,12 +542,66 @@ final class GameManager {
             if let scene {
                 barrel.explodeBarrel(columns: columns, rows: rows, scene: scene)
             }
+            // The only way to hurt the kraken: a blast whose row or column runs
+            // through its lair. Counted even if the same blast kills the snake.
+            if let kraken, kraken.isCrossed(byBlastFrom: barrel.position), kraken.takeHit() {
+                onBossLivesChanged?(kraken.lives)
+            }
             if hitsHead {
-                isGameOver = true
-                onGameOver?()
-                return
+                hurtPlayer()
+                guard !isGameOver else { return }
             }
         }
+    }
+
+    /// Advances the kraken's strikes by real time, like the bomb timers, so they
+    /// don't speed up with the snake. A strike hits only while its tentacle is up,
+    /// anywhere in its patch, and only the head counts -- same rule as a barrel
+    /// blast. Bomb-eater doesn't protect against it: tentacles aren't bombs.
+    private func updateKraken(delta: TimeInterval) {
+        guard let kraken else { return }
+        // Aim new strikes where the head will be when their tentacle comes up, if
+        // it keeps going: around its current cell, a snake swimming straight would
+        // always outrun the warning. (Off the map is fine; the kraken clamps it.)
+        let lead = isSnakeBlocked ? 0 : Int(TentacleStrike.warningDuration / moveInterval)
+        let heading = snake.direction.vector
+        let aim = GridPoint(x: snake.head.x + heading.dx * lead, y: snake.head.y + heading.dy * lead)
+        kraken.update(delta: delta, aim: aim)
+        if kraken.isStriking(snake.head) {
+            hurtPlayer()
+        }
+    }
+
+    /// Every way the snake gets hurt comes through here: costs a life, unless it's
+    /// still in its grace period from the last hit. The last life ends the run;
+    /// otherwise it blinks, untouchable, for `hitGraceDuration`. Callers check
+    /// `isGameOver` afterwards to decide whether to carry on.
+    private func hurtPlayer() {
+        guard !isGameOver, hitGraceRemaining <= 0 else { return }
+        lives -= 1
+        if maxLives > 1 {
+            onLivesChanged?(lives)
+        }
+        guard lives > 0 else {
+            isGameOver = true
+            onGameOver?()
+            return
+        }
+        hitGraceRemaining = hitGraceDuration
+        snake.playHitBlink(duration: hitGraceDuration)
+    }
+
+    /// Cells the snake stops against instead of entering: walls and the kraken's
+    /// lair. (Its own body is the snake's business; see `Snake.advance`.)
+    private func isBarrier(_ point: GridPoint) -> Bool {
+        (walls?.contains(point) ?? false) || (kraken?.footprint.contains(point) ?? false)
+    }
+
+    /// Poses anything animated by the clock rather than by ticks (the kraken), for
+    /// `time` (`AmbientClock` seconds). Called every frame, including after a game
+    /// over, so the boss keeps moving behind the overlay.
+    func animate(time: Double) {
+        kraken?.animate(time: time, focus: headWorldPosition)
     }
 
     /// Whether `point` lies on `center`'s row or column -- the cross a

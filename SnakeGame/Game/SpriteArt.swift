@@ -246,6 +246,147 @@ enum SpriteArt {
         }
     }
 
+    // MARK: Kraken
+
+    private static let krakenLight = UIColor(red: 0.86, green: 0.32, blue: 0.38, alpha: 1)
+    private static let krakenSkin = UIColor(red: 0.62, green: 0.13, blue: 0.23, alpha: 1)
+    private static let krakenShadow = UIColor(red: 0.2, green: 0.03, blue: 0.08, alpha: 1)
+    private static let krakenGlow = UIColor(red: 0.9, green: 0.18, blue: 0.3, alpha: 1)
+
+    /// One link of a kraken arm: a shaded crimson disc a cell across with a faint red
+    /// glow. Chains of these, scaled down toward the tip, make every arm (see
+    /// `TentacleChain`), so the whole kraken shares one texture.
+    static func tentacleLink(cellSize c: CGFloat) -> SKTexture {
+        padded("tentacle", cellSize: c) { ctx, cell in
+            let center = CGPoint(x: cell.midX, y: cell.midY)
+            let disc = CGPath(ellipseIn: square(center, c), transform: nil)
+            glow(disc, in: ctx, color: krakenGlow.withAlphaComponent(0.35), blur: c * 0.25)
+            fillRadial(disc, in: ctx, colors: [krakenLight, krakenSkin, krakenShadow],
+                       center: CGPoint(x: center.x - c * 0.18, y: center.y - c * 0.2), radius: c * 0.62)
+        }
+    }
+
+    /// A sucker: a pale ring around a dark cup.
+    static func sucker(cellSize c: CGFloat) -> SKTexture {
+        let side = c * 0.36
+        return cached("sucker-\(c)", size: CGSize(width: side, height: side)) { ctx in
+            let rect = CGRect(x: 0, y: 0, width: side, height: side)
+            ctx.setFillColor(UIColor(red: 0.97, green: 0.7, blue: 0.66, alpha: 0.95).cgColor)
+            ctx.fillEllipse(in: rect.insetBy(dx: side * 0.08, dy: side * 0.08))
+            ctx.setFillColor(UIColor(red: 0.45, green: 0.1, blue: 0.16, alpha: 0.9).cgColor)
+            ctx.fillEllipse(in: rect.insetBy(dx: side * 0.32, dy: side * 0.32))
+        }
+    }
+
+    /// The kraken from above: a bulbous, mottled mantle swelling up behind a broad
+    /// head, dotted with a few glowing spots, all with a red glow. The texture's
+    /// center is the kraken's center cell, with the head below it and the mantle
+    /// above (see `Kraken.headCenter`). The eyes are separate sprites (`krakenEye`,
+    /// `krakenPupil`) so they can follow the snake.
+    static func krakenBody(cellSize c: CGFloat) -> SKTexture {
+        let size = CGSize(width: c * 3.8, height: c * 6)
+        return cached("kraken-body-\(c)", size: size) { ctx in
+            let mid = CGPoint(x: size.width / 2, y: size.height / 2)
+            // UIKit's y runs down: the mantle sits above `mid`, the head below.
+            let mantle = CGRect(x: mid.x - 1.15 * c, y: mid.y - 2.5 * c, width: 2.3 * c, height: 3.1 * c)
+            let head = CGRect(x: mid.x - 1.3 * c, y: mid.y - 0.4 * c, width: 2.6 * c, height: 2.1 * c)
+            let shape = CGMutablePath()
+            shape.addEllipse(in: mantle)
+            shape.addEllipse(in: head)
+
+            glow(shape, in: ctx, color: krakenGlow.withAlphaComponent(0.45), blur: c * 0.5)
+            fillRadial(shape, in: ctx, colors: [krakenLight, krakenSkin, krakenShadow],
+                       center: CGPoint(x: mid.x - 0.4 * c, y: mid.y - 1.6 * c), radius: 3.6 * c)
+
+            // Darker mottling across the skin.
+            ctx.saveGState()
+            ctx.addPath(shape)
+            ctx.clip()
+            var seed: UInt32 = 1337
+            func next() -> CGFloat {
+                seed = seed &* 1_103_515_245 &+ 12345
+                return CGFloat((seed >> 16) & 0x7FFF) / CGFloat(0x7FFF)
+            }
+            ctx.setFillColor(krakenShadow.withAlphaComponent(0.3).cgColor)
+            for _ in 0..<28 {
+                let width = c * (0.14 + 0.3 * next())
+                let point = CGPoint(x: mid.x + c * (2.4 * next() - 1.2), y: mid.y + c * (4.0 * next() - 2.4))
+                ctx.fillEllipse(in: CGRect(x: point.x - width / 2, y: point.y - width * 0.35, width: width, height: width * 0.7))
+            }
+            // A pale crease where the mantle meets the head.
+            ctx.setStrokeColor(krakenLight.withAlphaComponent(0.35).cgColor)
+            ctx.setLineWidth(c * 0.05)
+            ctx.addArc(center: CGPoint(x: mid.x, y: mid.y + 0.9 * c), radius: 1.05 * c,
+                       startAngle: -.pi * 0.8, endAngle: -.pi * 0.2, clockwise: false)
+            ctx.strokePath()
+            ctx.restoreGState()
+
+            // A few bioluminescent spots on the mantle.
+            for (dx, dy) in [(-0.55, -1.7), (0.5, -1.45), (-0.2, -2.1), (0.7, -0.6), (-0.75, -0.75)] {
+                let spot = CGPath(ellipseIn: square(CGPoint(x: mid.x + CGFloat(dx) * c, y: mid.y + CGFloat(dy) * c), c * 0.12), transform: nil)
+                glow(spot, in: ctx, color: UIColor(red: 1.0, green: 0.5, blue: 0.32, alpha: 0.9), blur: c * 0.2)
+            }
+        }
+    }
+
+    /// A kraken eye: a glowing amber ball in a dark socket. Its horizontal pupil
+    /// (`krakenPupil`) is a separate sprite so it can look around.
+    static func krakenEye(cellSize c: CGFloat) -> SKTexture {
+        padded("kraken-eye", cellSize: c) { ctx, cell in
+            let center = CGPoint(x: cell.midX, y: cell.midY)
+            let diameter = c * 0.82
+            circle(center, radius: diameter / 2 + c * 0.07, in: ctx, color: krakenShadow)
+            let ball = CGPath(ellipseIn: square(center, diameter), transform: nil)
+            glow(ball, in: ctx, color: UIColor(red: 1.0, green: 0.72, blue: 0.22, alpha: 0.75), blur: c * 0.35)
+            fillRadial(ball, in: ctx,
+                       colors: [UIColor(red: 1.0, green: 0.95, blue: 0.6, alpha: 1),
+                                UIColor(red: 1.0, green: 0.76, blue: 0.26, alpha: 1),
+                                UIColor(red: 0.78, green: 0.38, blue: 0.08, alpha: 1)],
+                       center: CGPoint(x: center.x - diameter * 0.15, y: center.y - diameter * 0.18),
+                       radius: diameter * 0.62)
+        }
+    }
+
+    /// The octopus's signature pupil: a dark horizontal bar.
+    static func krakenPupil(cellSize c: CGFloat) -> SKTexture {
+        let size = CGSize(width: c * 0.48, height: c * 0.16)
+        return cached("kraken-pupil-\(c)", size: size) { ctx in
+            let shape = UIBezierPath(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: size.height / 2).cgPath
+            ctx.setFillColor(UIColor(red: 0.04, green: 0.02, blue: 0.03, alpha: 1).cgColor)
+            ctx.addPath(shape)
+            ctx.fillPath()
+        }
+    }
+
+    /// A cloud of ink: a dark, soft-edged blot, for the kraken's flinch and death.
+    static func inkCloud(cellSize c: CGFloat) -> SKTexture {
+        let side = c * 4
+        return cached("ink-\(c)", size: CGSize(width: side, height: side)) { ctx in
+            let center = CGPoint(x: side / 2, y: side / 2)
+            let shape = CGPath(ellipseIn: CGRect(x: 0, y: 0, width: side, height: side), transform: nil)
+            fillRadial(shape, in: ctx,
+                       colors: [UIColor(red: 0.03, green: 0.02, blue: 0.06, alpha: 0.85),
+                                UIColor(red: 0.05, green: 0.03, blue: 0.08, alpha: 0.5),
+                                UIColor(red: 0.05, green: 0.03, blue: 0.08, alpha: 0)],
+                       center: center, radius: side / 2)
+        }
+    }
+
+    /// A ring of foam, scaled up and faded out where a tentacle breaks the surface.
+    static func splashRing(cellSize c: CGFloat) -> SKTexture {
+        let side = c * 2
+        return cached("splash-\(c)", size: CGSize(width: side, height: side)) { ctx in
+            let ring = CGPath(ellipseIn: CGRect(x: 0, y: 0, width: side, height: side).insetBy(dx: c * 0.2, dy: c * 0.2), transform: nil)
+            ctx.saveGState()
+            ctx.setShadow(offset: .zero, blur: c * 0.15, color: UIColor.white.withAlphaComponent(0.8).cgColor)
+            ctx.setStrokeColor(color("Foam").withAlphaComponent(0.85).cgColor)
+            ctx.setLineWidth(c * 0.09)
+            ctx.addPath(ring)
+            ctx.strokePath()
+            ctx.restoreGState()
+        }
+    }
+
     // MARK: Walls and board
 
     /// One cell of reef rock. A few variants (`variant` 0..<`reefVariants`) with

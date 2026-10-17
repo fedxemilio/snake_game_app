@@ -3,7 +3,9 @@ import SpriteKit
 enum SnakeAdvanceResult {
     case moved
     case ateFood
-    case collided
+    /// The next cell is a barrier (the snake's own body, or anything the caller's
+    /// `isBlocked` says): the snake stays where it is this tick.
+    case blocked
 }
 
 /// Owns the snake's own state (segments, direction) and its own on-screen
@@ -188,9 +190,30 @@ final class Snake {
     /// active effect (e.g. collecting speed-cooler during bomb-eater's grace
     /// glow used to leave that glow stuck on permanently).
     private func cancelInFlightEffect() {
-        container.removeAllActions()
+        container.removeAction(forKey: Snake.effectActionKey)
         isGlowing = false
         glowColor = .clear
+    }
+
+    /// Power-up effects and the hit blink run on `container` under separate keys,
+    /// so starting one never cancels the other.
+    private static let effectActionKey = "powerUpEffect"
+    private static let blinkActionKey = "hitBlink"
+
+    /// Blinks the whole snake for `duration`: the grace period after losing a
+    /// life, when it can't be hurt again. Purely cosmetic -- GameManager tracks
+    /// the matching invincibility itself, sized to the same duration. Restarts
+    /// if it's already blinking.
+    func playHitBlink(duration: TimeInterval) {
+        let interval: TimeInterval = 0.1
+        let blink = SKAction.sequence([
+            .fadeAlpha(to: 0.25, duration: 0),
+            .wait(forDuration: interval),
+            .fadeAlpha(to: 1, duration: 0),
+            .wait(forDuration: interval),
+        ])
+        let count = max(1, Int(duration / (interval * 2)))
+        container.run(.sequence([.repeat(blink, count: count), .fadeAlpha(to: 1, duration: 0)]), withKey: Snake.blinkActionKey)
     }
 
     /// A brief color flash with no other effect -- speed-cooler's whole
@@ -201,7 +224,7 @@ final class Snake {
             .run { [weak self] in self?.setBodyColor(color) },
             .wait(forDuration: duration),
             .run { [weak self] in self?.resetBodyColor() }
-        ]))
+        ]), withKey: Snake.effectActionKey)
     }
 
     /// Flashes to `color` and pops one tail segment per flash, up to
@@ -227,7 +250,7 @@ final class Snake {
                 .wait(forDuration: flashInterval)
             ])
         }
-        container.run(.sequence(steps))
+        container.run(.sequence(steps), withKey: Snake.effectActionKey)
     }
 
     /// Bomb-eater's full visual lifecycle: solid `color`, a couple of
@@ -269,7 +292,7 @@ final class Snake {
             }
         ])
 
-        container.run(.sequence(steps))
+        container.run(.sequence(steps), withKey: Snake.effectActionKey)
     }
 
     /// `halvedGrowth`: when true (Levels mode), only every *other* fruit
@@ -278,7 +301,18 @@ final class Snake {
     /// a small non-collidable indicator at the tail (see `syncNodes`) as a
     /// preview of the growth to come. When false (free play), unchanged:
     /// every fruit grows the snake by one segment.
-    func advance(columns: Int, rows: Int, foodPosition: GridPoint, halvedGrowth: Bool) -> SnakeAdvanceResult {
+    ///
+    /// `isBlocked` is asked about the next cell before moving into it: walls
+    /// and the like are barriers the snake stops against rather than enters
+    /// (`.blocked`), the same as its own body. Snake still doesn't know what
+    /// any of them are -- the caller decides, and what a bump costs.
+    func advance(
+        columns: Int,
+        rows: Int,
+        foodPosition: GridPoint,
+        halvedGrowth: Bool,
+        isBlocked: (GridPoint) -> Bool
+    ) -> SnakeAdvanceResult {
         direction = Snake.resolveNextDirection(
             current: direction,
             requested: pendingDirection,
@@ -292,8 +326,8 @@ final class Snake {
         newHead.x = (newHead.x + columns) % columns
         newHead.y = (newHead.y + rows) % rows
 
-        if segments.contains(newHead) {
-            return .collided
+        if segments.contains(newHead) || isBlocked(newHead) {
+            return .blocked
         }
 
         segments.insert(newHead, at: 0)

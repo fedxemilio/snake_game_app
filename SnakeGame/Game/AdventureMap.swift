@@ -7,6 +7,14 @@ enum AdventureMap {
     static var columns: Int { map.first?.count ?? 0 }
     static var rows: Int { map.count }
 
+    /// The center of the kraken's lair (see `Kraken`): the middle of the map, in
+    /// the open water between the two pairs of reef bars.
+    static let krakenLair = GridPoint(x: 35, y: 20)
+
+    /// Where the snake starts, heading right: low on the map, clear of the lair,
+    /// with the kraken just coming into view at the edge of the screen.
+    static let snakeStart = GridPoint(x: 24, y: 8)
+
     static let walls: Set<GridPoint> = {
         var result: Set<GridPoint> = []
         for (rowFromTop, row) in map.enumerated() {

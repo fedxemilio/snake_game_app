@@ -46,6 +46,22 @@ final class GameScene: SKScene {
     /// pattern as onGameOver -- the overlay lives in SwiftUI.
     var onLevelComplete: (() -> Void)?
 
+    /// Fired with the boss's remaining lives whenever they change, or nil when
+    /// this run has no boss. Its HUD lives in SwiftUI, like the score's. Setting
+    /// it replays the current value: the first report comes from `didMove(to:)`,
+    /// which can run before SwiftUI has attached this.
+    var onBossLivesChanged: ((Int?) -> Void)? {
+        didSet { onBossLivesChanged?(bossLives) }
+    }
+    private var bossLives: Int?
+
+    /// Fired with the snake's remaining lives whenever they change, or nil in
+    /// modes where it only has one. Replays on set, like `onBossLivesChanged`.
+    var onLivesChanged: ((Int?) -> Void)? {
+        didSet { onLivesChanged?(lives) }
+    }
+    private var lives: Int?
+
     init(mode: GameMode) {
         self.mode = mode
         switch mode {
@@ -98,6 +114,14 @@ final class GameScene: SKScene {
         }
         gameManager.onGameOver = { [weak self] in
             self?.onGameOver?()
+        }
+        gameManager.onLivesChanged = { [weak self] lives in
+            self?.lives = lives
+            self?.onLivesChanged?(lives)
+        }
+        gameManager.onBossLivesChanged = { [weak self] lives in
+            self?.bossLives = lives
+            self?.onBossLivesChanged?(lives)
         }
         gameManager.onLevelComplete = { [weak self] in
             self?.onLevelComplete?()
@@ -258,8 +282,10 @@ final class GameScene: SKScene {
         if mode == .adventure {
             updateCamera()
         }
+        let time = AmbientClock.seconds(at: Date())
         if !reduceMotion {
-            water.update(time: AmbientClock.seconds(at: Date()))
+            water.update(time: time)
         }
+        gameManager.animate(time: time)
     }
 }
