@@ -138,6 +138,39 @@ enum SpriteArt {
         }
     }
 
+    /// The mine fruit: a glowing crimson sea urchin, round and fruit-sized like the
+    /// mango so it reads as something to collect, with soft spines so it reads as
+    /// the stuff mines are made of. Every few eaten earns the snake a mine to drop.
+    static func mineFruit(cellSize c: CGFloat) -> SKTexture {
+        padded("mine-fruit", cellSize: c) { ctx, cell in
+            let diameter = c * 0.5
+            let center = CGPoint(x: cell.midX, y: cell.midY)
+
+            ctx.setLineCap(.round)
+            ctx.setLineWidth(max(1, c * 0.045))
+            ctx.setStrokeColor(UIColor(red: 0.95, green: 0.32, blue: 0.42, alpha: 0.9).cgColor)
+            for index in 0..<12 {
+                let angle = CGFloat(index) / 12 * 2 * .pi
+                let inner = diameter * 0.4
+                let outer = diameter * (index.isMultiple(of: 2) ? 0.8 : 0.68)
+                ctx.move(to: CGPoint(x: center.x + cos(angle) * inner, y: center.y + sin(angle) * inner))
+                ctx.addLine(to: CGPoint(x: center.x + cos(angle) * outer, y: center.y + sin(angle) * outer))
+                ctx.strokePath()
+            }
+
+            let shape = CGPath(ellipseIn: square(center, diameter), transform: nil)
+            glow(shape, in: ctx, color: UIColor(red: 1.0, green: 0.25, blue: 0.35, alpha: 0.75), blur: c * 0.4)
+            fillRadial(shape, in: ctx,
+                       colors: [UIColor(red: 1.0, green: 0.55, blue: 0.6, alpha: 1),
+                                UIColor(red: 0.78, green: 0.12, blue: 0.26, alpha: 1),
+                                UIColor(red: 0.34, green: 0.03, blue: 0.12, alpha: 1)],
+                       center: CGPoint(x: center.x - diameter * 0.16, y: center.y - diameter * 0.18),
+                       radius: diameter * 0.7)
+            circle(CGPoint(x: center.x - diameter * 0.17, y: center.y - diameter * 0.2), radius: diameter * 0.09,
+                   in: ctx, color: UIColor.white.withAlphaComponent(0.7))
+        }
+    }
+
     /// A glowing orb in the power-up's color with its symbol on the front, so each
     /// kind reads at a glance rather than by color alone.
     static func powerUpOrb(color tint: UIColor, symbol: String, cellSize c: CGFloat) -> SKTexture {
@@ -208,6 +241,34 @@ enum SpriteArt {
                 ctx.setLineWidth(max(1, c * 0.03))
                 ctx.strokeEllipse(in: square(center, radius * 1.15))
             }
+        }
+    }
+
+    /// A cannonball: a heavy, dark iron sphere with a cold rim of light so it reads
+    /// on dark water, and a cast seam so you can see it roll.
+    static func cannonball(cellSize c: CGFloat) -> SKTexture {
+        padded("cannonball", cellSize: c) { ctx, cell in
+            let diameter = c * 0.8
+            let center = CGPoint(x: cell.midX, y: cell.midY)
+            let ball = CGPath(ellipseIn: square(center, diameter), transform: nil)
+            glow(ball, in: ctx, color: color("Foam").withAlphaComponent(0.5), blur: c * 0.3)
+            fillRadial(ball, in: ctx,
+                       colors: [UIColor(red: 0.62, green: 0.67, blue: 0.7, alpha: 1),
+                                UIColor(red: 0.24, green: 0.27, blue: 0.3, alpha: 1),
+                                UIColor(red: 0.07, green: 0.08, blue: 0.09, alpha: 1)],
+                       center: CGPoint(x: center.x - diameter * 0.2, y: center.y - diameter * 0.22),
+                       radius: diameter * 0.75)
+
+            ctx.saveGState()
+            ctx.addPath(ball)
+            ctx.clip()
+            ctx.setStrokeColor(UIColor.black.withAlphaComponent(0.45).cgColor)
+            ctx.setLineWidth(max(1, c * 0.04))
+            ctx.strokeEllipse(in: CGRect(x: center.x - diameter * 0.18, y: center.y - diameter / 2, width: diameter * 0.36, height: diameter))
+            ctx.restoreGState()
+
+            circle(CGPoint(x: center.x - diameter * 0.2, y: center.y - diameter * 0.22), radius: diameter * 0.08,
+                   in: ctx, color: UIColor.white.withAlphaComponent(0.6))
         }
     }
 
@@ -384,6 +445,104 @@ enum SpriteArt {
             ctx.addPath(ring)
             ctx.strokePath()
             ctx.restoreGState()
+        }
+    }
+
+    // MARK: Moray
+
+    private static let morayLight = UIColor(red: 0.36, green: 0.47, blue: 0.22, alpha: 1)
+    private static let moraySkin = UIColor(red: 0.17, green: 0.24, blue: 0.1, alpha: 1)
+    private static let morayShadow = UIColor(red: 0.03, green: 0.05, blue: 0.02, alpha: 1)
+    private static let moraySpot = UIColor(red: 0.8, green: 1.0, blue: 0.35, alpha: 1)
+
+    /// A length of the moray: thicker than the snake (well over a cell, so lengths
+    /// overlap into one body rather than reading as beads), dark olive, with a
+    /// sickly green rim glow and a couple of glowing chartreuse spots. Two variants
+    /// of spot pattern, alternated down the body.
+    static func morayBody(cellSize c: CGFloat, variant: Int) -> SKTexture {
+        padded("moray-body-\(variant)", cellSize: c) { ctx, cell in
+            let shape = UIBezierPath(roundedRect: cell.insetBy(dx: -c * 0.13, dy: -c * 0.13), cornerRadius: c * 0.32).cgPath
+            glow(shape, in: ctx, color: UIColor(red: 0.5, green: 0.75, blue: 0.2, alpha: 0.35), blur: c * 0.3)
+            fillRadial(shape, in: ctx, colors: [morayLight, moraySkin, morayShadow],
+                       center: CGPoint(x: cell.midX - c * 0.15, y: cell.midY - c * 0.2), radius: c * 0.75)
+            let spots: [(CGFloat, CGFloat, CGFloat)] = variant == 0
+                ? [(0.3, 0.32, 0.05), (0.64, 0.66, 0.04)]
+                : [(0.66, 0.3, 0.04), (0.34, 0.68, 0.05)]
+            for (x, y, radius) in spots {
+                let spot = CGPath(ellipseIn: square(CGPoint(x: cell.minX + x * c, y: cell.minY + y * c), radius * 2 * c), transform: nil)
+                glow(spot, in: ctx, color: moraySpot, blur: c * 0.12)
+            }
+        }
+    }
+
+    /// The moray's head, facing right: a long, blunt wedge with its jaw hanging
+    /// open, needle teeth along the gape, and two milky, faintly glowing eyes, no
+    /// pupils, because it's blind.
+    static func morayHead(cellSize c: CGFloat) -> SKTexture {
+        padded("moray-head", cellSize: c) { ctx, cell in
+            func point(_ px: CGFloat, _ py: CGFloat) -> CGPoint {
+                CGPoint(x: cell.minX + px * c, y: cell.midY + py * c)
+            }
+            // Upper and lower jaw, parted at the front by a dark gape.
+            let head = CGMutablePath()
+            head.move(to: point(-0.1, -0.52))
+            head.addQuadCurve(to: point(1.18, -0.16), control: point(0.75, -0.62))
+            head.addLine(to: point(0.72, 0))
+            head.addLine(to: point(1.18, 0.16))
+            head.addQuadCurve(to: point(-0.1, 0.52), control: point(0.75, 0.62))
+            head.closeSubpath()
+            glow(head, in: ctx, color: UIColor(red: 0.5, green: 0.75, blue: 0.2, alpha: 0.4), blur: c * 0.35)
+            fillRadial(head, in: ctx, colors: [morayLight, moraySkin, morayShadow],
+                       center: point(0.35, -0.2), radius: c * 0.9)
+
+            let gape = CGMutablePath()
+            gape.move(to: point(1.2, -0.16))
+            gape.addLine(to: point(0.7, 0))
+            gape.addLine(to: point(1.2, 0.16))
+            gape.closeSubpath()
+            ctx.setFillColor(UIColor(red: 0.12, green: 0.01, blue: 0.03, alpha: 1).cgColor)
+            ctx.addPath(gape)
+            ctx.fillPath()
+
+            ctx.setFillColor(UIColor(white: 0.95, alpha: 0.95).cgColor)
+            for index in 0..<4 {
+                let along = 0.78 + CGFloat(index) * 0.1
+                let spread = (along - 0.7) * 0.32
+                for side: CGFloat in [-1, 1] {
+                    let tooth = CGMutablePath()
+                    tooth.move(to: point(along - 0.035, side * spread))
+                    tooth.addLine(to: point(along + 0.035, side * spread))
+                    tooth.addLine(to: point(along, side * (spread - 0.09)))
+                    tooth.closeSubpath()
+                    ctx.addPath(tooth)
+                    ctx.fillPath()
+                }
+            }
+
+            for side: CGFloat in [-1, 1] {
+                let eye = CGPath(ellipseIn: square(point(0.42, side * 0.3), c * 0.17), transform: nil)
+                glow(eye, in: ctx, color: UIColor(red: 0.82, green: 0.9, blue: 0.95, alpha: 0.75), blur: c * 0.18)
+                fillRadial(eye, in: ctx,
+                           colors: [UIColor(white: 1, alpha: 1), UIColor(red: 0.74, green: 0.8, blue: 0.84, alpha: 1)],
+                           center: point(0.42, side * 0.3), radius: c * 0.09)
+            }
+        }
+    }
+
+    /// The moray's tail, pointing right: the body thinning into a frilled fin.
+    static func morayTail(cellSize c: CGFloat) -> SKTexture {
+        padded("moray-tail", cellSize: c) { ctx, cell in
+            func point(_ px: CGFloat, _ py: CGFloat) -> CGPoint {
+                CGPoint(x: cell.minX + px * c, y: cell.midY + py * c)
+            }
+            let fin = CGMutablePath()
+            fin.move(to: point(-0.35, -0.55))
+            fin.addQuadCurve(to: point(1.15, 0), control: point(0.6, -0.6))
+            fin.addQuadCurve(to: point(-0.35, 0.55), control: point(0.6, 0.6))
+            fin.closeSubpath()
+            glow(fin, in: ctx, color: UIColor(red: 0.5, green: 0.75, blue: 0.2, alpha: 0.35), blur: c * 0.3)
+            fillLinear(fin, in: ctx, colors: [moraySkin, morayShadow],
+                       from: point(0, -0.5), to: point(1, 0.5))
         }
     }
 

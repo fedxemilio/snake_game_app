@@ -1,6 +1,7 @@
 import SpriteKit
 
-/// Adventure mode's boss: a kraken in the middle of the map (`AdventureMap.krakenLair`),
+/// Adventure's first boss: a kraken in the middle of the Kraken's Lair stage
+/// (`AdventureStage.krakensLair`),
 /// flailing its arms and lashing out with tentacle strikes (`TentacleStrike`) around
 /// the snake.
 ///

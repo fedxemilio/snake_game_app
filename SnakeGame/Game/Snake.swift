@@ -36,6 +36,9 @@ final class Snake {
     /// flag; the segment it corresponds to isn't tracked separately (see
     /// `growthIndicatorNode` for why that's deliberate).
     private var pendingGrowth = false
+    /// Segments still to grow: each move that owes one keeps its tail instead of
+    /// dropping it.
+    private var growthOwed = 0
     private var growthIndicatorNode: SKShapeNode?
 
     /// Tracks consecutive same-direction turns (left/left/left or
@@ -422,25 +425,43 @@ final class Snake {
 
         segments.insert(newHead, at: 0)
 
-        guard newHead == foodPosition else {
-            segments.removeLast()
-            syncNodes()
-            return .moved
+        let ate = newHead == foodPosition
+        if ate {
+            countFruit(halvedGrowth: halvedGrowth)
         }
-
-        let shouldGrow: Bool
-        if halvedGrowth {
-            shouldGrow = pendingGrowth
-            pendingGrowth.toggle()
+        // Growing is just not dropping the tail this move.
+        if growthOwed > 0 {
+            growthOwed -= 1
         } else {
-            shouldGrow = true
-        }
-        if !shouldGrow {
             segments.removeLast()
         }
 
         syncNodes()
-        return .ateFood
+        return ate ? .ateFood : .moved
+    }
+
+    /// Fruit the snake got without eating it itself (knocked into by something it
+    /// pushed): it grows on its next move exactly as if it had, halved growth and
+    /// all.
+    func feed(halvedGrowth: Bool) {
+        countFruit(halvedGrowth: halvedGrowth)
+        syncGrowthIndicator()
+    }
+
+    /// One fruit's worth of growth: a segment owed to the next move, or in Levels
+    /// (`halvedGrowth`) every other fruit, with the in-between one shown as the
+    /// growth indicator.
+    private func countFruit(halvedGrowth: Bool) {
+        let grows: Bool
+        if halvedGrowth {
+            grows = pendingGrowth
+            pendingGrowth.toggle()
+        } else {
+            grows = true
+        }
+        if grows {
+            growthOwed += 1
+        }
     }
 
     /// Reuses existing nodes and only repositions them; nodes are created or

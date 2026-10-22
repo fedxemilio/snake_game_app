@@ -30,6 +30,7 @@ final class GameScene: SKScene {
     private let hitHaptic = UIImpactFeedbackGenerator(style: .heavy)
     private let explosionHaptic = UIImpactFeedbackGenerator(style: .medium)
     private let deathHaptic = UINotificationFeedbackGenerator()
+    private let pushHaptic = UIImpactFeedbackGenerator(style: .light)
 
     /// Non-nil only in .adventure mode. Its presence is also what tells
     /// setUpMarineSnow() and update() to do camera-relative placement and
@@ -57,21 +58,33 @@ final class GameScene: SKScene {
     /// pattern as onGameOver -- the overlay lives in SwiftUI.
     var onLevelComplete: (() -> Void)?
 
-    /// Fired with the boss's remaining lives whenever they change, or nil when
+    /// Fired with the boss's name and lives whenever they change, or nil when
     /// this run has no boss. Its HUD lives in SwiftUI, like the score's. Setting
     /// it replays the current value: the first report comes from `didMove(to:)`,
     /// which can run before SwiftUI has attached this.
-    var onBossLivesChanged: ((Int?) -> Void)? {
-        didSet { onBossLivesChanged?(bossLives) }
+    var onBossChanged: ((GameManager.BossStatus?) -> Void)? {
+        didSet { onBossChanged?(boss) }
     }
-    private var bossLives: Int?
+    private var boss: GameManager.BossStatus?
+
+    /// Adventure: a stage's boss is beaten and its send-off has played; the game
+    /// waits for `beginNextStage()` (or a new run). Passes the stage's index into
+    /// `AdventureStage.all`. The victory screen and voyage chart live in SwiftUI.
+    var onStageCleared: ((Int) -> Void)?
 
     /// Fired with the snake's remaining lives whenever they change, or nil in
-    /// modes where it only has one. Replays on set, like `onBossLivesChanged`.
+    /// modes where it only has one. Replays on set, like `onBossChanged`.
     var onLivesChanged: ((Int?) -> Void)? {
         didSet { onLivesChanged?(lives) }
     }
     private var lives: Int?
+
+    /// Fired with mine fruit progress and mines ready whenever they change, or nil
+    /// in modes without mine fruit. Replays on set, like `onBossChanged`.
+    var onMineSupplyChanged: ((GameManager.MineSupply?) -> Void)? {
+        didSet { onMineSupplyChanged?(mineSupply) }
+    }
+    private var mineSupply: GameManager.MineSupply?
 
     init(mode: GameMode) {
         self.mode = mode
@@ -129,13 +142,20 @@ final class GameScene: SKScene {
         gameManager.onJolt = { [weak self] jolt in
             self?.feel(jolt)
         }
+        gameManager.onMineSupplyChanged = { [weak self] supply in
+            self?.mineSupply = supply
+            self?.onMineSupplyChanged?(supply)
+        }
         gameManager.onLivesChanged = { [weak self] lives in
             self?.lives = lives
             self?.onLivesChanged?(lives)
         }
-        gameManager.onBossLivesChanged = { [weak self] lives in
-            self?.bossLives = lives
-            self?.onBossLivesChanged?(lives)
+        gameManager.onBossChanged = { [weak self] status in
+            self?.boss = status
+            self?.onBossChanged?(status)
+        }
+        gameManager.onStageCleared = { [weak self] stage in
+            self?.onStageCleared?(stage)
         }
         gameManager.onLevelComplete = { [weak self] in
             self?.onLevelComplete?()
@@ -153,7 +173,8 @@ final class GameScene: SKScene {
 
         setUpMarineSnow()
         setUpInputGesture(on: view)
-        gameManager.startNewGame()
+        // Adventure's first run waits on the voyage chart (`releaseStart()`).
+        gameManager.startNewGame(holdingForCue: mode == .adventure)
 
         // Set the camera to its correct starting position before the first
         // frame renders, rather than letting it snap there on frame two.
@@ -170,6 +191,18 @@ final class GameScene: SKScene {
     /// Called from the Level Complete overlay's tap.
     func beginNextLevel() {
         gameManager.beginNextLevel()
+    }
+
+    /// Called when the player sets off from the voyage chart at the start of an
+    /// Adventure run.
+    func releaseStart() {
+        gameManager.releaseStart()
+    }
+
+    /// Called when the player sets off from the voyage chart after a stage is
+    /// cleared.
+    func beginNextStage() {
+        gameManager.beginNextStage()
     }
 
     // MARK: - Setup
@@ -291,6 +324,8 @@ final class GameScene: SKScene {
             guard isOnScreen(point) else { return }
             shake(strength: 4, duration: 0.25)
             explosionHaptic.impactOccurred(intensity: 0.7)
+        case .push, .drop:
+            pushHaptic.impactOccurred()
         }
     }
 
@@ -311,6 +346,15 @@ final class GameScene: SKScene {
     private func setUpInputGesture(on view: SKView) {
         let recognizer = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
         view.addGestureRecognizer(recognizer)
+
+        // A tap (a touch that doesn't travel, so it never competes with a steering
+        // drag) drops a mine, when one's ready.
+        let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
+        view.addGestureRecognizer(tap)
+    }
+
+    @objc private func handleTap(_ recognizer: UITapGestureRecognizer) {
+        gameManager.dropMine()
     }
 
     @objc private func handlePan(_ recognizer: UIPanGestureRecognizer) {
