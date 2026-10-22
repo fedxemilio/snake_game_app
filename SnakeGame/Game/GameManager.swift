@@ -125,6 +125,25 @@ final class GameManager {
     /// only has the one (there's nothing to show).
     var onLivesChanged: ((Int?) -> Void)?
 
+    /// Moments worth feeling: GameScene turns these into camera shake (Adventure)
+    /// and haptics. An explosion carries its scene position, so ones off screen
+    /// can be ignored.
+    enum Jolt {
+        case hit
+        case death
+        case explosion(CGPoint)
+    }
+    var onJolt: ((Jolt) -> Void)?
+
+    /// What hurt the snake, for how the hit looks (`showImpact`).
+    private enum Hurt {
+        /// It pressed into a barrier at this cell.
+        case barrier(GridPoint)
+        case bomb
+        case blast
+        case tentacle
+    }
+
     init(scene: SKScene, mode: GameMode, columns: Int, rows: Int, cellSize: CGFloat, origin: CGPoint) {
         self.scene = scene
         self.mode = mode
@@ -250,7 +269,11 @@ final class GameManager {
             halvedGrowth: mode == .levels,
             isBlocked: isBarrier
         )
-        isSnakeBlocked = result == .blocked
+        if case .blocked = result {
+            isSnakeBlocked = true
+        } else {
+            isSnakeBlocked = false
+        }
 
         switch result {
         case .moved:
@@ -264,12 +287,12 @@ final class GameManager {
             if mode == .levels {
                 advanceLevelProgress()
             }
-        case .blocked:
+        case .blocked(let cell):
             // Stopped against a wall, the lair or its own body: it stays put, and
             // every tick it's still pressing in tries to hurt it, which only lands
             // once the grace period from the last hit is over. No power-up
             // protects against this. Nothing else happens on a tick it didn't move.
-            hurtPlayer()
+            hurtPlayer(.barrier(cell))
             return
         }
 
@@ -284,18 +307,20 @@ final class GameManager {
             self.powerUp = nil
         }
 
-        // Touching a bomb sets it off: it's gone either way, and it costs a life
-        // unless bomb-eater is active (or the snake is still in its grace
-        // period). If that was the last life, the bomb stays on screen under the
-        // head, so the game-over freeze shows what did it.
+        // Touching a bomb sets it off: it explodes either way, and it costs a
+        // life unless bomb-eater is active (or the snake is still in its grace
+        // period).
         let bombsAtHead = bombs.filter { $0.position == snake.head }
         if !bombsAtHead.isEmpty {
+            if let scene {
+                bombsAtHead.forEach { $0.explode(in: scene) }
+            }
+            bombs.removeAll { $0.position == snake.head }
+            onJolt?(.explosion(headWorldPosition))
             if !isBombEaterActive {
-                hurtPlayer()
+                hurtPlayer(.bomb)
                 guard !isGameOver else { return }
             }
-            bombsAtHead.forEach { $0.removeFromScene() }
-            bombs.removeAll { $0.position == snake.head }
         }
 
         attemptPowerUpSpawn()
@@ -522,14 +547,21 @@ final class GameManager {
     /// it, checked separately for this bomb and for each barrel below).
     private func resolveSensorDetonation(at position: GridPoint) {
         let vicinity = GameManager.vicinity(of: position, columns: columns, rows: rows)
+        onJolt?(.explosion(GridGeometry.position(for: position, cellSize: cellSize, origin: origin)))
 
         if !isBombEaterActive && vicinity.contains(snake.head) {
-            hurtPlayer()
+            hurtPlayer(.blast)
             guard !isGameOver else { return }
         }
 
+        // The mines it clears go off too, one after another just behind the
+        // sensor's own blast, so the chain reads in order.
         let minesToRemove = bombs.filter { $0.kind == .mine && vicinity.contains($0.position) }
-        minesToRemove.forEach { $0.removeFromScene() }
+        if let scene {
+            for (index, mine) in minesToRemove.enumerated() {
+                mine.explode(in: scene, delay: 0.12 + 0.08 * Double(index))
+            }
+        }
         bombs.removeAll { $0.kind == .mine && vicinity.contains($0.position) }
 
         for other in bombs where other.kind == .sensor && vicinity.contains(other.position) {
@@ -542,13 +574,14 @@ final class GameManager {
             if let scene {
                 barrel.explodeBarrel(columns: columns, rows: rows, scene: scene)
             }
+            onJolt?(.explosion(GridGeometry.position(for: barrel.position, cellSize: cellSize, origin: origin)))
             // The only way to hurt the kraken: a blast whose row or column runs
             // through its lair. Counted even if the same blast kills the snake.
             if let kraken, kraken.isCrossed(byBlastFrom: barrel.position), kraken.takeHit() {
                 onBossLivesChanged?(kraken.lives)
             }
             if hitsHead {
-                hurtPlayer()
+                hurtPlayer(.blast)
                 guard !isGameOver else { return }
             }
         }
@@ -568,27 +601,63 @@ final class GameManager {
         let aim = GridPoint(x: snake.head.x + heading.dx * lead, y: snake.head.y + heading.dy * lead)
         kraken.update(delta: delta, aim: aim)
         if kraken.isStriking(snake.head) {
-            hurtPlayer()
+            hurtPlayer(.tentacle)
         }
     }
 
     /// Every way the snake gets hurt comes through here: costs a life, unless it's
-    /// still in its grace period from the last hit. The last life ends the run;
-    /// otherwise it blinks, untouchable, for `hitGraceDuration`. Callers check
-    /// `isGameOver` afterwards to decide whether to carry on.
-    private func hurtPlayer() {
+    /// still in its grace period from the last hit. Callers check `isGameOver`
+    /// afterwards to decide whether to carry on.
+    ///
+    /// - Not the last life: a red flash and shudder, then it blinks, untouchable,
+    ///   for `hitGraceDuration`.
+    /// - The last life: the run stops at once (`isGameOver`), but `onGameOver`, and
+    ///   so the overlay, waits for the snake's death animation to finish.
+    private func hurtPlayer(_ hurt: Hurt) {
         guard !isGameOver, hitGraceRemaining <= 0 else { return }
         lives -= 1
         if maxLives > 1 {
             onLivesChanged?(lives)
         }
+        showImpact(hurt)
+
         guard lives > 0 else {
             isGameOver = true
-            onGameOver?()
+            onJolt?(.death)
+            snake.playDeath { [weak self] in
+                self?.onGameOver?()
+            }
             return
         }
+        onJolt?(.hit)
         hitGraceRemaining = hitGraceDuration
+        snake.playHitImpact()
         snake.playHitBlink(duration: hitGraceDuration)
+    }
+
+    /// Where the hit happened: a bump throws up a puff where the head met the
+    /// barrier, a tentacle a red splash at the head. Bombs and blasts bring their
+    /// own explosions.
+    private func showImpact(_ hurt: Hurt) {
+        guard let scene else { return }
+        let head = headWorldPosition
+        switch hurt {
+        case .barrier(let cell):
+            // Half a cell toward the barrier, worked out from the step rather than
+            // the barrier's position, which may be across a wrap.
+            func unwrap(_ delta: Int) -> CGFloat {
+                CGFloat(abs(delta) > 1 ? (delta > 0 ? -1 : 1) : delta)
+            }
+            let contact = CGPoint(
+                x: head.x + unwrap(cell.x - snake.head.x) * cellSize / 2,
+                y: head.y + unwrap(cell.y - snake.head.y) * cellSize / 2
+            )
+            BoardEffects.impact(at: contact, color: SKColor(named: "Foam") ?? .white, cellSize: cellSize, in: scene)
+        case .tentacle:
+            BoardEffects.impact(at: head, color: SKColor(red: 1, green: 0.3, blue: 0.3, alpha: 1), cellSize: cellSize, in: scene)
+        case .bomb, .blast:
+            break
+        }
     }
 
     /// Cells the snake stops against instead of entering: walls and the kraken's

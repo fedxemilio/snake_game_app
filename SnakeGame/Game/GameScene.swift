@@ -20,6 +20,17 @@ final class GameScene: SKScene {
     /// the marine snow is left out.
     private let reduceMotion = UIAccessibility.isReduceMotionEnabled
 
+    /// Camera shake in progress (Adventure only): seconds left, its full length,
+    /// and how far it throws the view at the start, in points.
+    private var shakeRemaining: TimeInterval = 0
+    private var shakeDuration: TimeInterval = 0
+    private var shakeStrength: CGFloat = 0
+    private var lastFrameTime: TimeInterval = 0
+
+    private let hitHaptic = UIImpactFeedbackGenerator(style: .heavy)
+    private let explosionHaptic = UIImpactFeedbackGenerator(style: .medium)
+    private let deathHaptic = UINotificationFeedbackGenerator()
+
     /// Non-nil only in .adventure mode. Its presence is also what tells
     /// setUpMarineSnow() and update() to do camera-relative placement and
     /// per-frame following, respectively.
@@ -114,6 +125,9 @@ final class GameScene: SKScene {
         }
         gameManager.onGameOver = { [weak self] in
             self?.onGameOver?()
+        }
+        gameManager.onJolt = { [weak self] jolt in
+            self?.feel(jolt)
         }
         gameManager.onLivesChanged = { [weak self] lives in
             self?.lives = lives
@@ -228,7 +242,7 @@ final class GameScene: SKScene {
         cameraNode = camera
     }
 
-    private func updateCamera() {
+    private func updateCamera(delta: TimeInterval = 0) {
         guard let cameraNode else { return }
 
         let headPosition = gameManager.headWorldPosition
@@ -242,7 +256,50 @@ final class GameScene: SKScene {
             ? worldSize.height / 2
             : min(max(headPosition.y, halfHeight), worldSize.height - halfHeight)
 
-        cameraNode.position = CGPoint(x: x, y: y)
+        let shake = shakeOffset(delta: delta)
+        cameraNode.position = CGPoint(x: x + shake.x, y: y + shake.y)
+    }
+
+    /// This frame's shake, dying away over its duration. Advances the shake by
+    /// `delta`.
+    private func shakeOffset(delta: TimeInterval) -> CGPoint {
+        shakeRemaining = max(0, shakeRemaining - delta)
+        guard shakeRemaining > 0, shakeDuration > 0 else { return .zero }
+        let reach = shakeStrength * CGFloat(shakeRemaining / shakeDuration)
+        return CGPoint(x: .random(in: -reach...reach), y: .random(in: -reach...reach))
+    }
+
+    private func shake(strength: CGFloat, duration: TimeInterval) {
+        guard !reduceMotion, cameraNode != nil else { return }
+        // A stronger jolt takes over; a weaker one doesn't cut a stronger one short.
+        let current = shakeDuration > 0 ? shakeStrength * CGFloat(shakeRemaining / shakeDuration) : 0
+        guard strength >= current else { return }
+        shakeStrength = strength
+        shakeDuration = duration
+        shakeRemaining = duration
+    }
+
+    private func feel(_ jolt: GameManager.Jolt) {
+        switch jolt {
+        case .hit:
+            shake(strength: 6, duration: 0.3)
+            hitHaptic.impactOccurred()
+        case .death:
+            shake(strength: 10, duration: 0.55)
+            deathHaptic.notificationOccurred(.error)
+        case .explosion(let point):
+            guard isOnScreen(point) else { return }
+            shake(strength: 4, duration: 0.25)
+            explosionHaptic.impactOccurred(intensity: 0.7)
+        }
+    }
+
+    /// Whether `point` (scene coordinates) is in view. Only Adventure scrolls, so
+    /// everywhere else the whole board always is.
+    private func isOnScreen(_ point: CGPoint) -> Bool {
+        guard let cameraNode else { return true }
+        return abs(point.x - cameraNode.position.x) < size.width / 2 + 24
+            && abs(point.y - cameraNode.position.y) < size.height / 2 + 24
     }
 
     /// Continuous drag-to-steer rather than discrete swipes: a swipe
@@ -278,9 +335,12 @@ final class GameScene: SKScene {
     // MARK: - Game loop
 
     override func update(_ currentTime: TimeInterval) {
+        let delta = lastFrameTime == 0 ? 0 : currentTime - lastFrameTime
+        lastFrameTime = currentTime
+
         gameManager.tick(currentTime: currentTime)
         if mode == .adventure {
-            updateCamera()
+            updateCamera(delta: delta)
         }
         let time = AmbientClock.seconds(at: Date())
         if !reduceMotion {

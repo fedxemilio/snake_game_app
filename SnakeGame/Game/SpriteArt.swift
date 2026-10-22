@@ -387,6 +387,82 @@ enum SpriteArt {
         }
     }
 
+    // MARK: Effects
+
+    /// A soft white glow fading to nothing, two cells across: tinted and blended
+    /// additively at runtime for flashes and light thrown on the water.
+    static func flare(cellSize c: CGFloat) -> SKTexture {
+        let side = c * 2
+        return cached("flare-\(c)", size: CGSize(width: side, height: side)) { ctx in
+            let shape = CGPath(ellipseIn: CGRect(x: 0, y: 0, width: side, height: side), transform: nil)
+            fillRadial(shape, in: ctx,
+                       colors: [.white, UIColor.white.withAlphaComponent(0.45), UIColor.white.withAlphaComponent(0)],
+                       center: CGPoint(x: side / 2, y: side / 2), radius: side / 2)
+        }
+    }
+
+    /// A thin, soft-edged white ring, two cells across: an explosion's shockwave.
+    static func shockRing(cellSize c: CGFloat) -> SKTexture {
+        let side = c * 2
+        return cached("shock-\(c)", size: CGSize(width: side, height: side)) { ctx in
+            let ring = CGPath(ellipseIn: CGRect(x: 0, y: 0, width: side, height: side).insetBy(dx: c * 0.18, dy: c * 0.18), transform: nil)
+            ctx.saveGState()
+            ctx.setShadow(offset: .zero, blur: c * 0.14, color: UIColor.white.cgColor)
+            ctx.setStrokeColor(UIColor.white.cgColor)
+            ctx.setLineWidth(c * 0.07)
+            ctx.addPath(ring)
+            ctx.strokePath()
+            ctx.restoreGState()
+        }
+    }
+
+    /// A small bubble: a pale rim with a glint, for bursts and the snake coming apart.
+    static func bubble(cellSize c: CGFloat) -> SKTexture {
+        let side = (c * 0.34).rounded(.up)
+        return cached("bubble-\(c)", size: CGSize(width: side, height: side)) { ctx in
+            let rect = CGRect(x: 0, y: 0, width: side, height: side).insetBy(dx: 1, dy: 1)
+            ctx.setFillColor(color("Foam").withAlphaComponent(0.12).cgColor)
+            ctx.fillEllipse(in: rect)
+            ctx.setStrokeColor(color("Foam").withAlphaComponent(0.8).cgColor)
+            ctx.setLineWidth(max(0.8, side * 0.08))
+            ctx.strokeEllipse(in: rect)
+            circle(CGPoint(x: rect.minX + rect.width * 0.32, y: rect.minY + rect.height * 0.3), radius: side * 0.1,
+                   in: ctx, color: UIColor.white.withAlphaComponent(0.9))
+        }
+    }
+
+    /// A jagged scrap of dark mine casing, thrown out by an explosion.
+    static func shard(cellSize c: CGFloat) -> SKTexture {
+        let side = (c * 0.22).rounded(.up)
+        return cached("shard-\(c)", size: CGSize(width: side, height: side)) { ctx in
+            let path = CGMutablePath()
+            path.move(to: CGPoint(x: side * 0.1, y: side * 0.25))
+            path.addLine(to: CGPoint(x: side * 0.85, y: side * 0.05))
+            path.addLine(to: CGPoint(x: side * 0.95, y: side * 0.6))
+            path.addLine(to: CGPoint(x: side * 0.35, y: side * 0.95))
+            path.closeSubpath()
+            ctx.setFillColor(UIColor(red: 0.3, green: 0.36, blue: 0.38, alpha: 1).cgColor)
+            ctx.addPath(path)
+            ctx.fillPath()
+        }
+    }
+
+    /// A horizontal band of light, bright along its middle and soft at the edges:
+    /// stretched along a row or column for a barrel's blast.
+    static func beam(cellSize c: CGFloat) -> SKTexture {
+        let size = CGSize(width: c, height: c * 1.6)
+        return cached("beam-\(c)", size: size) { ctx in
+            let rect = CGRect(origin: .zero, size: size)
+            guard let gradient = CGGradient(
+                colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                colors: [UIColor.white.withAlphaComponent(0), UIColor.white.withAlphaComponent(0.55),
+                         UIColor.white, UIColor.white.withAlphaComponent(0.55), UIColor.white.withAlphaComponent(0)].map(\.cgColor) as CFArray,
+                locations: [0, 0.3, 0.5, 0.7, 1]
+            ) else { return }
+            ctx.drawLinearGradient(gradient, start: CGPoint(x: rect.midX, y: rect.minY), end: CGPoint(x: rect.midX, y: rect.maxY), options: [])
+        }
+    }
+
     // MARK: Walls and board
 
     /// One cell of reef rock. A few variants (`variant` 0..<`reefVariants`) with

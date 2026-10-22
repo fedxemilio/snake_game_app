@@ -143,14 +143,9 @@ private struct LivesHUD: View {
     var body: some View {
         HStack(spacing: 4) {
             ForEach(0..<slots, id: \.self) { index in
-                let isLeft = index < lives
-                Image(systemName: isLeft ? "heart.fill" : "heart")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color("BioluminescentGlow").opacity(isLeft ? 1 : 0.45))
-                    .shadow(color: Color("BioluminescentGlow").opacity(isLeft ? 0.8 : 0), radius: 4)
+                HeartIcon(isFull: index < lives)
             }
         }
-        .animation(.spring(duration: 0.4), value: lives)
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
         .background {
@@ -164,6 +159,51 @@ private struct LivesHUD: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Lives")
         .accessibilityValue("\(lives) left")
+    }
+}
+
+/// One of `LivesHUD`'s hearts. Losing it (or getting it back) is a moment: it
+/// swells with a red flash, then settles into its new state.
+private struct HeartIcon: View {
+    let isFull: Bool
+
+    private struct Pop {
+        var scale: CGFloat = 1
+        var flash: Double = 0
+    }
+
+    private static let teal = Color("BioluminescentGlow")
+    private static let red = Color(red: 1.0, green: 0.3, blue: 0.3)
+
+    var body: some View {
+        // A local copy: the animator's closure can't reach the main-actor static.
+        let red = Self.red
+        Image(systemName: isFull ? "heart.fill" : "heart")
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(Self.teal.opacity(isFull ? 1 : 0.45))
+            .shadow(color: Self.teal.opacity(isFull ? 0.8 : 0), radius: 4)
+            .keyframeAnimator(initialValue: Pop(), trigger: isFull) { content, pop in
+                content
+                    .overlay {
+                        Image(systemName: "heart.fill")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(red)
+                            .shadow(color: red, radius: 6)
+                            .opacity(pop.flash)
+                    }
+                    .scaleEffect(pop.scale)
+            } keyframes: { _ in
+                KeyframeTrack(\.scale) {
+                    SpringKeyframe(1.9, duration: 0.14)
+                    SpringKeyframe(0.75, duration: 0.16)
+                    SpringKeyframe(1, duration: 0.3)
+                }
+                KeyframeTrack(\.flash) {
+                    LinearKeyframe(1, duration: 0.05)
+                    LinearKeyframe(1, duration: 0.15)
+                    LinearKeyframe(0, duration: 0.45)
+                }
+            }
     }
 }
 

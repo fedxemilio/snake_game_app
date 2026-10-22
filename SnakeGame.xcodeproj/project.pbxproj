@@ -14,6 +14,7 @@
 		0A121E2BC9576196A9C1FD58 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D7D59531375B4E03F40C4591 /* Assets.xcassets */; };
 		15621104AB9493AA880C85B2 /* SeaBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = D92762A955461A068FC47FB0 /* SeaBackground.swift */; };
 		198543825048E7A143BD7A1E /* AdventureMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 612B728DEBFC0188608FC0EA /* AdventureMap.swift */; };
+		1AD23FB4ED173D03B3A95D4C /* BoardEffects.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEE09AC5D7EE2E07E22A4B1D /* BoardEffects.swift */; };
 		1B868009553918F2F0B35538 /* StartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5009AAA1C9BD88F522CC11C7 /* StartView.swift */; };
 		1C79C708AC7EC0B0630AF1A2 /* PreviewAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B63AF8602C611D2D8F8DA1C0 /* PreviewAssets.xcassets */; };
 		2319773398778DC4C1372351 /* GameSessionState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10592488ECE7D03C76F2D457 /* GameSessionState.swift */; };
@@ -86,8 +87,9 @@
 		DE14E965AD6C7A29F89E21B3 /* PowerUpKind.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerUpKind.swift; sourceTree = "<group>"; };
 		E3C23E5E097EA6AC2112DA72 /* FloatingTitle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingTitle.swift; sourceTree = "<group>"; };
 		E5F89BE771BA90B9CF0D4FAD /* Kraken.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Kraken.swift; sourceTree = "<group>"; };
-		F4F2F5BDBFC0007F7A22B32E /* SnakeGame.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = SnakeGame.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F4F2F5BDBFC0007F7A22B32E /* SnakeGame.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SnakeGame.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F6BF6FF662DA105D13CCAC28 /* Direction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Direction.swift; sourceTree = "<group>"; };
+		FEE09AC5D7EE2E07E22A4B1D /* BoardEffects.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardEffects.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -95,6 +97,7 @@
 			isa = PBXGroup;
 			children = (
 				612B728DEBFC0188608FC0EA /* AdventureMap.swift */,
+				FEE09AC5D7EE2E07E22A4B1D /* BoardEffects.swift */,
 				2D47EEAAB3A6E3F83FF8FB4C /* Bomb.swift */,
 				F6BF6FF662DA105D13CCAC28 /* Direction.swift */,
 				D25EB0BB8104E1FED01C0AF9 /* Food.swift */,
@@ -230,8 +233,6 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
-				TargetAttributes = {
-				};
 			};
 			buildConfigurationList = 22830EE39D05F9028B4CCFF4 /* Build configuration list for PBXProject "SnakeGame" */;
 			developmentRegion = en;
@@ -276,6 +277,7 @@
 				412AA308C1FD7E19C3A953E0 /* AbyssWaterScene.swift in Sources */,
 				198543825048E7A143BD7A1E /* AdventureMap.swift in Sources */,
 				CB61967B1C21370EFB93D771 /* AmbientClock.swift in Sources */,
+				1AD23FB4ED173D03B3A95D4C /* BoardEffects.swift in Sources */,
 				EA17EE0CC43EF6826C0A2CB2 /* Bomb.swift in Sources */,
 				BF31B8A7946B1B97CB940A32 /* ContentView.swift in Sources */,
 				84CA53CD4CC114FEDA13E903 /* Direction.swift in Sources */,
@@ -317,6 +319,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				DEVELOPMENT_ASSET_PATHS = SnakeGame/PreviewContent;
+				DEVELOPMENT_TEAM = 8VYCH33FGZ;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = SnakeGame/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -398,6 +401,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				DEVELOPMENT_ASSET_PATHS = SnakeGame/PreviewContent;
+				DEVELOPMENT_TEAM = 8VYCH33FGZ;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = SnakeGame/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (

@@ -171,38 +171,37 @@ final class Bomb {
 
     /// `.barrel`-only: triggered externally by a `.sensor` detonating within
     /// its vicinity -- there's no player-safe way to set one off yet
-    /// (pushing it is planned, not implemented, hence it's still lethal to
+    /// (pushing it is planned, not implemented, hence it still costs a life to
     /// touch directly like any other bomb). Marks this bomb for removal and
-    /// flashes its entire row and column. GameManager separately checks that
-    /// same row/column against the snake's head, since Bomb doesn't know
-    /// about the snake.
+    /// blasts beams of light down its entire row and column
+    /// (`BoardEffects.crossBlast`). GameManager separately checks that same
+    /// row/column against the snake's head and the kraken, since Bomb doesn't
+    /// know about either.
     func explodeBarrel(columns: Int, rows: Int, scene: SKScene) {
         guard kind == .barrel, !isExpired else { return }
         isExpired = true
-        node.removeAllActions()
-        node.run(.sequence([.scale(to: 1.6, duration: 0.15), .fadeOut(withDuration: 0.15), .removeFromParent()]))
+        pop()
 
-        for x in 0..<columns {
-            addBlastFlash(at: GridPoint(x: x, y: position.y), scene: scene)
-        }
-        for y in 0..<rows {
-            addBlastFlash(at: GridPoint(x: position.x, y: y), scene: scene)
-        }
+        let board = CGRect(x: origin.x, y: origin.y, width: CGFloat(columns) * cellSize, height: CGFloat(rows) * cellSize)
+        BoardEffects.crossBlast(at: node.position, color: Bomb.lightColor(for: .barrel), cellSize: cellSize, board: board, in: scene)
     }
 
-    /// One brief cross-blast tile, standalone from this Bomb -- it has no
-    /// gameplay effect of its own (GameManager does the actual head-hit
-    /// check once, against the row/column, not per tile) and just fades
-    /// itself out.
-    private func addBlastFlash(at point: GridPoint, scene: SKScene) {
-        let flash = SKShapeNode(rectOf: CGSize(width: cellSize - 2, height: cellSize - 2), cornerRadius: cellSize * 0.2)
-        flash.fillColor = Bomb.lightColor(for: .barrel).withAlphaComponent(0.55)
-        flash.strokeColor = .clear
-        flash.blendMode = .add
-        flash.position = GridGeometry.position(for: point, cellSize: cellSize, origin: origin)
-        flash.zPosition = -1
-        scene.addChild(flash)
-        flash.run(.sequence([.fadeOut(withDuration: 0.25), .removeFromParent()]))
+    /// Sets this bomb off where it sits -- the snake touched it, or a sensor's
+    /// blast cleared it: it bursts and is gone, with an explosion in its color.
+    /// `delay` staggers the bombs in a chain reaction. Purely visual: the caller
+    /// has already dropped it from play, and the node removes itself once its
+    /// animation is done (so don't also call `removeFromScene()`; see CLAUDE.md).
+    func explode(in parent: SKNode, delay: TimeInterval = 0) {
+        vicinityIndicator?.run(.sequence([.fadeOut(withDuration: 0.15), .removeFromParent()]))
+        pop(after: delay)
+        BoardEffects.explosion(at: node.position, color: Bomb.lightColor(for: kind), cellSize: cellSize, delay: delay, in: parent)
+    }
+
+    /// The bomb itself bursting: a quick swell and fade, then it removes itself.
+    private func pop(after delay: TimeInterval = 0) {
+        node.removeAllActions()
+        let burst = SKAction.group([.scale(to: 1.5, duration: 0.08), .fadeOut(withDuration: 0.12)])
+        node.run(.sequence([.wait(forDuration: delay), burst, .removeFromParent()]))
     }
 
     /// Advances this bomb's own fuse/movement by `delta` real seconds --
@@ -221,9 +220,22 @@ final class Bomb {
 
         if fuseRemaining! <= 0 {
             isExpired = true
-            node.removeAllActions()
-            node.run(.sequence([.fadeOut(withDuration: 0.2), .removeFromParent()]))
             vicinityIndicator?.run(.sequence([.fadeOut(withDuration: 0.2), .removeFromParent()]))
+            if let parent = node.parent {
+                if kind == .sensor {
+                    // A real blast, filling the 3x3 area it hits.
+                    BoardEffects.sensorBlast(at: node.position, color: Bomb.lightColor(for: kind), cellSize: cellSize, in: parent)
+                } else {
+                    // A timed bomb's fuse just runs out, harmlessly.
+                    BoardEffects.fizzle(at: node.position, color: Bomb.lightColor(for: kind), cellSize: cellSize, in: parent)
+                }
+            }
+            if kind == .sensor {
+                pop()
+            } else {
+                node.removeAllActions()
+                node.run(.sequence([.group([.fadeOut(withDuration: 0.3), .scale(to: 0.6, duration: 0.3)]), .removeFromParent()]))
+            }
             return
         }
 
