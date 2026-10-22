@@ -11,10 +11,11 @@ import SpriteKit
 /// snake's head enters one of its 8 surrounding cells -- see `Bomb.arm()`
 /// and `GameManager.resolveSensorDetonation(at:)` for the proximity trigger
 /// and the vicinity-wide consequences when it goes off. `.barrel` is square
-/// rather than round and otherwise inert -- it never arms or counts down on
-/// its own, and the only thing that sets it off (for now; pushing it safely
-/// is planned but not implemented) is a `.sensor` detonating within its
-/// vicinity, at which point it blasts its entire row and column.
+/// rather than round, and not a hazard to touch at all: it's `Pushable`. The
+/// snake walks it along a cell at a time in front of its head. Pushed onto
+/// another bomb, it primes and goes off a moment later; a `.sensor` detonating within its
+/// vicinity sets it off at once. Either way it blasts its entire row and
+/// column.
 enum BombKind {
     case mine
     case timed
@@ -24,7 +25,8 @@ enum BombKind {
 }
 
 /// A hazard: once placed, running the snake's head into one (without
-/// bomb-eater active) is a loss. `.mine` never relocates or expires; see
+/// bomb-eater active) costs a life. (Except `.barrel`, which the snake pushes
+/// instead; see `Pushable`.) `.mine` never relocates or expires; see
 /// `BombKind` for how `.timed` and `.drifter` differ. Drawn as a horned sea
 /// mine with a light at its heart in its kind's color (`.barrel` is a banded
 /// cask instead), and pulses, so it reads as a hazard rather than a
@@ -50,6 +52,18 @@ final class Bomb {
     private var fuseRemaining: TimeInterval?
     private var hasPlayedFuseWarning = false
 
+    /// `.barrel`-only: the bomb it was pushed onto and is primed to go off with (see
+    /// `prime(on:after:)`). nil while it's free to be pushed.
+    private(set) weak var primedOn: Bomb?
+    /// `.barrel`-only: its fuse has run out, and it's waiting for `GameManager` to
+    /// set it off -- the blast hurts things only GameManager knows about.
+    private(set) var hasFuseRunOut = false
+
+    /// A barrel has been pushed onto this bomb and primed on it (see
+    /// `prime(on:after:)`): it's spent, harmless to touch and won't arm, and goes
+    /// off with the barrel.
+    private(set) var isUnderBarrel = false
+
     /// Real seconds until a `.drifter` takes its next step. nil for kinds
     /// that don't move on their own.
     private var timeUntilNextDrift: TimeInterval?
@@ -63,6 +77,11 @@ final class Bomb {
     /// (see `arm()`), since arming already means the player is close; there's
     /// no separate calm-then-warn runway like `.timed` gets.
     private static let sensorFuseDuration: TimeInterval = 3.0
+
+    /// How long a barrel blinks on top of the bomb it was pushed onto before it
+    /// goes off. Short on purpose: getting the snake off that row or column in
+    /// time is part of the puzzle.
+    private static let barrelFuseDuration: TimeInterval = 1.2
 
     init(kind: BombKind, position: GridPoint, cellSize: CGFloat, origin: CGPoint) {
         self.kind = kind
@@ -97,7 +116,13 @@ final class Bomb {
         }
         node = SKSpriteNode(texture: texture)
         node.position = GridGeometry.position(for: position, cellSize: cellSize, origin: origin)
-        node.run(Bomb.pulseAction(scale: Bomb.calmPulseScale, duration: 0.6), withKey: Bomb.pulseActionKey)
+        if kind == .barrel {
+            // An object to push, not a hazard to avoid: it sits still (until
+            // primed), and above any bomb it ends up on top of.
+            node.zPosition = 0.5
+        } else {
+            node.run(Bomb.pulseAction(scale: Bomb.calmPulseScale, duration: 0.6), withKey: Bomb.pulseActionKey)
+        }
 
         if kind == .sensor {
             let indicator = SKShapeNode(rectOf: CGSize(width: cellSize * 3 - 2, height: cellSize * 3 - 2), cornerRadius: cellSize * 0.3)
@@ -162,47 +187,68 @@ final class Bomb {
     /// from both the player-proximity check and a neighboring sensor's
     /// detonation without first checking whether this bomb needs it.
     func arm() {
-        guard kind == .sensor, fuseRemaining == nil else { return }
+        guard kind == .sensor, fuseRemaining == nil, !isUnderBarrel else { return }
         fuseRemaining = Bomb.sensorFuseDuration
         hasPlayedFuseWarning = true
         node.run(Bomb.pulseAction(scale: Bomb.warningPulseScale, duration: 0.15), withKey: Bomb.pulseActionKey)
         vicinityIndicator?.fillColor = Bomb.lightColor(for: .sensor).withAlphaComponent(0.2)
     }
 
-    /// `.barrel`-only: triggered externally by a `.sensor` detonating within
-    /// its vicinity -- there's no player-safe way to set one off yet
-    /// (pushing it is planned, not implemented, hence it's still lethal to
-    /// touch directly like any other bomb). Marks this bomb for removal and
-    /// flashes its entire row and column. GameManager separately checks that
-    /// same row/column against the snake's head, since Bomb doesn't know
-    /// about the snake.
+    /// `.barrel`-only: set off by `GameManager`, either when a `.sensor`
+    /// detonates within its vicinity or when its own fuse runs out after
+    /// being pushed onto a bomb (`prime(on:after:)`). Marks this bomb for removal and
+    /// blasts beams of light down its entire row and column
+    /// (`BoardEffects.crossBlast`). GameManager separately checks that same
+    /// row/column against the snake's head and the kraken, and sets off the
+    /// bomb it was primed on, since Bomb doesn't know about any of those.
     func explodeBarrel(columns: Int, rows: Int, scene: SKScene) {
         guard kind == .barrel, !isExpired else { return }
         isExpired = true
-        node.removeAllActions()
-        node.run(.sequence([.scale(to: 1.6, duration: 0.15), .fadeOut(withDuration: 0.15), .removeFromParent()]))
+        pop()
 
-        for x in 0..<columns {
-            addBlastFlash(at: GridPoint(x: x, y: position.y), scene: scene)
-        }
-        for y in 0..<rows {
-            addBlastFlash(at: GridPoint(x: position.x, y: y), scene: scene)
-        }
+        let board = CGRect(x: origin.x, y: origin.y, width: CGFloat(columns) * cellSize, height: CGFloat(rows) * cellSize)
+        BoardEffects.crossBlast(at: node.position, color: Bomb.lightColor(for: .barrel), cellSize: cellSize, board: board, in: scene)
     }
 
-    /// One brief cross-blast tile, standalone from this Bomb -- it has no
-    /// gameplay effect of its own (GameManager does the actual head-hit
-    /// check once, against the row/column, not per tile) and just fades
-    /// itself out.
-    private func addBlastFlash(at point: GridPoint, scene: SKScene) {
-        let flash = SKShapeNode(rectOf: CGSize(width: cellSize - 2, height: cellSize - 2), cornerRadius: cellSize * 0.2)
-        flash.fillColor = Bomb.lightColor(for: .barrel).withAlphaComponent(0.55)
-        flash.strokeColor = .clear
-        flash.blendMode = .add
-        flash.position = GridGeometry.position(for: point, cellSize: cellSize, origin: origin)
-        flash.zPosition = -1
-        scene.addChild(flash)
-        flash.run(.sequence([.fadeOut(withDuration: 0.25), .removeFromParent()]))
+    /// Sets this bomb off where it sits -- the snake touched it, or a sensor's
+    /// blast cleared it: it bursts and is gone, with an explosion in its color.
+    /// `delay` staggers the bombs in a chain reaction. Purely visual: the caller
+    /// has already dropped it from play, and the node removes itself once its
+    /// animation is done (so don't also call `removeFromScene()`; see CLAUDE.md).
+    func explode(in parent: SKNode, delay: TimeInterval = 0) {
+        vicinityIndicator?.run(.sequence([.fadeOut(withDuration: 0.15), .removeFromParent()]))
+        pop(after: delay)
+        BoardEffects.explosion(at: node.position, color: Bomb.lightColor(for: kind), cellSize: cellSize, delay: delay, in: parent)
+    }
+
+    /// A barrel that has been pushed onto another bomb (`trigger`): once its move
+    /// is over (`delay`), it blinks hot for `barrelFuseDuration`, then its fuse has
+    /// run out (`hasFuseRunOut`) and `GameManager` sets it off, taking `trigger`
+    /// with it. From the moment it primes, neither is an obstacle or a hazard to
+    /// touch (`isSolid`, `isUnderBarrel`). A no-op for anything but a free barrel.
+    func prime(on trigger: Bomb, after delay: TimeInterval) {
+        guard kind == .barrel, primedOn == nil, !isExpired else { return }
+        primedOn = trigger
+        trigger.isUnderBarrel = true
+        fuseRemaining = delay + Bomb.barrelFuseDuration
+        hasPlayedFuseWarning = true
+
+        let hot = SKColor(red: 1.0, green: 0.35, blue: 0.2, alpha: 1)
+        let blink = SKAction.sequence([
+            .colorize(with: hot, colorBlendFactor: 0.85, duration: 0.07),
+            .colorize(withColorBlendFactor: 0, duration: 0.07),
+        ])
+        node.run(.sequence([
+            .wait(forDuration: delay),
+            .group([.repeatForever(blink), Bomb.pulseAction(scale: Bomb.warningPulseScale, duration: 0.12)]),
+        ]), withKey: Bomb.pulseActionKey)
+    }
+
+    /// The bomb itself bursting: a quick swell and fade, then it removes itself.
+    private func pop(after delay: TimeInterval = 0) {
+        node.removeAllActions()
+        let burst = SKAction.group([.scale(to: 1.5, duration: 0.08), .fadeOut(withDuration: 0.12)])
+        node.run(.sequence([.wait(forDuration: delay), burst, .removeFromParent()]))
     }
 
     /// Advances this bomb's own fuse/movement by `delta` real seconds --
@@ -220,10 +266,28 @@ final class Bomb {
         fuseRemaining = remaining - delta
 
         if fuseRemaining! <= 0 {
+            if kind == .barrel {
+                fuseRemaining = nil
+                hasFuseRunOut = true
+                return
+            }
             isExpired = true
-            node.removeAllActions()
-            node.run(.sequence([.fadeOut(withDuration: 0.2), .removeFromParent()]))
             vicinityIndicator?.run(.sequence([.fadeOut(withDuration: 0.2), .removeFromParent()]))
+            if let parent = node.parent {
+                if kind == .sensor {
+                    // A real blast, filling the 3x3 area it hits.
+                    BoardEffects.sensorBlast(at: node.position, color: Bomb.lightColor(for: kind), cellSize: cellSize, in: parent)
+                } else {
+                    // A timed bomb's fuse just runs out, harmlessly.
+                    BoardEffects.fizzle(at: node.position, color: Bomb.lightColor(for: kind), cellSize: cellSize, in: parent)
+                }
+            }
+            if kind == .sensor {
+                pop()
+            } else {
+                node.removeAllActions()
+                node.run(.sequence([.group([.fadeOut(withDuration: 0.3), .scale(to: 0.6, duration: 0.3)]), .removeFromParent()]))
+            }
             return
         }
 
@@ -259,5 +323,28 @@ final class Bomb {
             node.run(.move(to: GridGeometry.position(for: next, cellSize: cellSize, origin: origin), duration: Bomb.driftInterval * 0.6))
             return
         }
+    }
+}
+
+extension Bomb: Pushable {
+    /// Barrels step: the snake walks one along in front of its head.
+    var pushStyle: PushStyle { .step }
+
+    /// A barrel is solid until it's primed on a bomb: from then on the two are
+    /// spent, and the snake can swim straight through that cell.
+    var isSolid: Bool {
+        kind == .barrel && primedOn == nil && !isExpired
+    }
+
+    var landsOnBombs: Bool { true }
+
+    /// Steps over in about the time the snake takes to follow it.
+    func move(to destination: GridPoint, cells: Int) -> TimeInterval {
+        position = destination
+        let duration = 0.12 * Double(cells)
+        let step = SKAction.move(to: GridGeometry.position(for: destination, cellSize: cellSize, origin: origin), duration: duration)
+        step.timingMode = .easeOut
+        node.run(step, withKey: "slide")
+        return duration
     }
 }

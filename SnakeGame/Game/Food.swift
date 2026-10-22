@@ -1,20 +1,34 @@
 import SpriteKit
 
-/// Owns the food's own position and its own node, same shape as `Snake`. Drawn as
-/// a glowing mango-colored fruit (`SpriteArt.fruit`), gently pulsing.
+/// Owns the food's own position and its own node, same shape as `Snake`. The
+/// mango (`SpriteArt.fruit`) is the fruit that grows the snake; Adventure also
+/// keeps a mine fruit (`SpriteArt.mineFruit`) on the board, spawned and replaced
+/// the same way, which earns mines instead (see `GameManager`). Both gently pulse.
 final class Food {
+    enum Kind {
+        case mango
+        case mineFruit
+    }
+
+    let kind: Kind
     private(set) var position: GridPoint
 
     private let node: SKSpriteNode
     private let cellSize: CGFloat
     private let origin: CGPoint
 
-    init(columns: Int, rows: Int, cellSize: CGFloat, origin: CGPoint, avoiding occupied: [GridPoint]) {
+    init(kind: Kind = .mango, columns: Int, rows: Int, cellSize: CGFloat, origin: CGPoint, avoiding occupied: [GridPoint]) {
+        self.kind = kind
         self.cellSize = cellSize
         self.origin = origin
         self.position = GridGeometry.randomPosition(columns: columns, rows: rows, avoiding: occupied)
 
-        node = SKSpriteNode(texture: SpriteArt.fruit(cellSize: cellSize))
+        switch kind {
+        case .mango:
+            node = SKSpriteNode(texture: SpriteArt.fruit(cellSize: cellSize))
+        case .mineFruit:
+            node = SKSpriteNode(texture: SpriteArt.mineFruit(cellSize: cellSize))
+        }
         node.position = GridGeometry.position(for: position, cellSize: cellSize, origin: origin)
 
         let swell = SKAction.scale(to: 1.12, duration: 0.9)

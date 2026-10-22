@@ -1,9 +1,11 @@
 import SpriteKit
 
-enum SnakeAdvanceResult {
+enum SnakeAdvanceResult: Equatable {
     case moved
     case ateFood
-    case collided
+    /// The next cell (`at`) is a barrier (the snake's own body, or anything the
+    /// caller's `isBlocked` says): the snake stays where it is this tick.
+    case blocked(at: GridPoint)
 }
 
 /// Owns the snake's own state (segments, direction) and its own on-screen
@@ -34,6 +36,9 @@ final class Snake {
     /// flag; the segment it corresponds to isn't tracked separately (see
     /// `growthIndicatorNode` for why that's deliberate).
     private var pendingGrowth = false
+    /// Segments still to grow: each move that owes one keeps its tail instead of
+    /// dropping it.
+    private var growthOwed = 0
     private var growthIndicatorNode: SKShapeNode?
 
     /// Tracks consecutive same-direction turns (left/left/left or
@@ -188,9 +193,91 @@ final class Snake {
     /// active effect (e.g. collecting speed-cooler during bomb-eater's grace
     /// glow used to leave that glow stuck on permanently).
     private func cancelInFlightEffect() {
-        container.removeAllActions()
+        container.removeAction(forKey: Snake.effectActionKey)
         isGlowing = false
         glowColor = .clear
+    }
+
+    /// Power-up effects, the hit blink and the hit/death shudder run on
+    /// `container` under separate keys, so starting one never cancels another.
+    private static let effectActionKey = "powerUpEffect"
+    private static let blinkActionKey = "hitBlink"
+    private static let shudderActionKey = "shudder"
+    private static let hurtColor = SKColor(red: 1.0, green: 0.25, blue: 0.25, alpha: 1)
+
+    private var allSegmentNodes: [SegmentSprite] { [headNode] + bodyNodes }
+
+    /// The moment of a non-fatal hit: every segment flashes red and the snake
+    /// shudders. The grace-period blink (`playHitBlink`) runs alongside.
+    func playHitImpact() {
+        for node in allSegmentNodes {
+            node.flash(color: Snake.hurtColor, alpha: 0.9, duration: 0.4)
+        }
+        container.run(Snake.shudder(strength: cellSize * 0.14, beats: 4), withKey: Snake.shudderActionKey)
+    }
+
+    /// The end of a run: a hard convulsion and a white-hot flash, then the snake
+    /// comes apart head to tail, each segment bursting into bubbles. Calls
+    /// `completion` once it's gone (about 1.3 s), which is when the Game Over
+    /// overlay should appear.
+    func playDeath(completion: @escaping () -> Void) {
+        cancelInFlightEffect()
+        container.removeAction(forKey: Snake.blinkActionKey)
+        container.alpha = 1
+
+        let nodes = allSegmentNodes
+        for node in nodes {
+            node.flash(color: .white, alpha: 1, duration: 0.45)
+        }
+        container.run(Snake.shudder(strength: cellSize * 0.22, beats: 7), withKey: Snake.shudderActionKey)
+
+        let start: TimeInterval = 0.4
+        let stagger = min(0.05, 0.7 / Double(nodes.count))
+        let parent = container.parent ?? container
+        for (index, node) in nodes.enumerated() {
+            node.run(.sequence([
+                .wait(forDuration: start + Double(index) * stagger),
+                .run { [weak self, weak node] in
+                    guard let self, let node else { return }
+                    let point = self.container.convert(node.position, to: parent)
+                    BoardEffects.bubbleBurst(at: point, count: 4, cellSize: self.cellSize, in: parent)
+                },
+                .group([.scale(to: 0.15, duration: 0.22), .fadeOut(withDuration: 0.22)]),
+            ]))
+        }
+        growthIndicatorNode?.run(.fadeOut(withDuration: 0.3))
+
+        let total = start + Double(nodes.count) * stagger + 0.6
+        container.run(.sequence([.wait(forDuration: total), .run(completion)]))
+    }
+
+    /// A side-to-side jolt of `container`, dying away over `beats` steps and
+    /// ending back where it started.
+    private static func shudder(strength: CGFloat, beats: Int) -> SKAction {
+        var steps: [SKAction] = []
+        for beat in 0..<beats {
+            let falloff = 1 - CGFloat(beat) / CGFloat(beats)
+            let side: CGFloat = beat.isMultiple(of: 2) ? 1 : -1
+            steps.append(.move(to: CGPoint(x: side * strength * falloff, y: 0), duration: 0.035))
+        }
+        steps.append(.move(to: .zero, duration: 0.035))
+        return .sequence(steps)
+    }
+
+    /// Blinks the whole snake for `duration`: the grace period after losing a
+    /// life, when it can't be hurt again. Purely cosmetic -- GameManager tracks
+    /// the matching invincibility itself, sized to the same duration. Restarts
+    /// if it's already blinking.
+    func playHitBlink(duration: TimeInterval) {
+        let interval: TimeInterval = 0.1
+        let blink = SKAction.sequence([
+            .fadeAlpha(to: 0.25, duration: 0),
+            .wait(forDuration: interval),
+            .fadeAlpha(to: 1, duration: 0),
+            .wait(forDuration: interval),
+        ])
+        let count = max(1, Int(duration / (interval * 2)))
+        container.run(.sequence([.repeat(blink, count: count), .fadeAlpha(to: 1, duration: 0)]), withKey: Snake.blinkActionKey)
     }
 
     /// A brief color flash with no other effect -- speed-cooler's whole
@@ -201,7 +288,7 @@ final class Snake {
             .run { [weak self] in self?.setBodyColor(color) },
             .wait(forDuration: duration),
             .run { [weak self] in self?.resetBodyColor() }
-        ]))
+        ]), withKey: Snake.effectActionKey)
     }
 
     /// Flashes to `color` and pops one tail segment per flash, up to
@@ -227,7 +314,7 @@ final class Snake {
                 .wait(forDuration: flashInterval)
             ])
         }
-        container.run(.sequence(steps))
+        container.run(.sequence(steps), withKey: Snake.effectActionKey)
     }
 
     /// Bomb-eater's full visual lifecycle: solid `color`, a couple of
@@ -269,7 +356,7 @@ final class Snake {
             }
         ])
 
-        container.run(.sequence(steps))
+        container.run(.sequence(steps), withKey: Snake.effectActionKey)
     }
 
     /// `halvedGrowth`: when true (Levels mode), only every *other* fruit
@@ -278,45 +365,103 @@ final class Snake {
     /// a small non-collidable indicator at the tail (see `syncNodes`) as a
     /// preview of the growth to come. When false (free play), unchanged:
     /// every fruit grows the snake by one segment.
-    func advance(columns: Int, rows: Int, foodPosition: GridPoint, halvedGrowth: Bool) -> SnakeAdvanceResult {
-        direction = Snake.resolveNextDirection(
+    ///
+    /// `isBlocked` is asked about the next cell before moving into it: walls
+    /// and the like are barriers the snake stops against rather than enters
+    /// (`.blocked`), the same as its own body. Snake still doesn't know what
+    /// any of them are -- the caller decides, and what a bump costs.
+    func advance(
+        columns: Int,
+        rows: Int,
+        foodPosition: GridPoint,
+        halvedGrowth: Bool,
+        isBlocked: (GridPoint) -> Bool
+    ) -> SnakeAdvanceResult {
+        func isBarrier(_ point: GridPoint) -> Bool {
+            segments.contains(point) || isBlocked(point)
+        }
+        func step(toward heading: Direction) -> GridPoint {
+            let vector = heading.vector
+            return GridPoint(
+                x: (head.x + vector.dx + columns) % columns,
+                y: (head.y + vector.dy + rows) % rows
+            )
+        }
+
+        // Worked out on copies and committed only if the snake actually moves: a
+        // turn that goes nowhere (blocked) doesn't count toward the same-way
+        // streak, and the snake keeps facing the way it last moved, so turning
+        // back the way it came is still judged against its real neck. The
+        // requested turn stays pending until the player changes it.
+        var turnSense = lastTurnSense
+        var streak = sameSenseStreak
+        var next = Snake.resolveNextDirection(
             current: direction,
             requested: pendingDirection,
-            lastTurnSense: &lastTurnSense,
-            sameSenseStreak: &sameSenseStreak
+            lastTurnSense: &turnSense,
+            sameSenseStreak: &streak
         )
-        pendingDirection = direction
+        var newHead = step(toward: next)
 
-        let vector = direction.vector
-        var newHead = GridPoint(x: head.x + vector.dx, y: head.y + vector.dy)
-        newHead.x = (newHead.x + columns) % columns
-        newHead.y = (newHead.y + rows) % rows
-
-        if segments.contains(newHead) {
-            return .collided
+        // The streak rule dropped the requested turn, but straight ahead is
+        // blocked. The rule is there to stop accidental hooks back into the
+        // body, not to hold the snake against a wall, so take the turn after all
+        // if it's open (it can be, for a snake at its minimum length).
+        if next != pendingDirection && isBarrier(newHead) {
+            let turned = step(toward: pendingDirection)
+            if !isBarrier(turned) {
+                next = pendingDirection
+                newHead = turned
+                streak += 1
+            }
         }
+
+        guard !isBarrier(newHead) else { return .blocked(at: newHead) }
+
+        direction = next
+        pendingDirection = next
+        lastTurnSense = turnSense
+        sameSenseStreak = streak
 
         segments.insert(newHead, at: 0)
 
-        guard newHead == foodPosition else {
-            segments.removeLast()
-            syncNodes()
-            return .moved
+        let ate = newHead == foodPosition
+        if ate {
+            countFruit(halvedGrowth: halvedGrowth)
         }
-
-        let shouldGrow: Bool
-        if halvedGrowth {
-            shouldGrow = pendingGrowth
-            pendingGrowth.toggle()
+        // Growing is just not dropping the tail this move.
+        if growthOwed > 0 {
+            growthOwed -= 1
         } else {
-            shouldGrow = true
-        }
-        if !shouldGrow {
             segments.removeLast()
         }
 
         syncNodes()
-        return .ateFood
+        return ate ? .ateFood : .moved
+    }
+
+    /// Fruit the snake got without eating it itself (knocked into by something it
+    /// pushed): it grows on its next move exactly as if it had, halved growth and
+    /// all.
+    func feed(halvedGrowth: Bool) {
+        countFruit(halvedGrowth: halvedGrowth)
+        syncGrowthIndicator()
+    }
+
+    /// One fruit's worth of growth: a segment owed to the next move, or in Levels
+    /// (`halvedGrowth`) every other fruit, with the in-between one shown as the
+    /// growth indicator.
+    private func countFruit(halvedGrowth: Bool) {
+        let grows: Bool
+        if halvedGrowth {
+            grows = pendingGrowth
+            pendingGrowth.toggle()
+        } else {
+            grows = true
+        }
+        if grows {
+            growthOwed += 1
+        }
     }
 
     /// Reuses existing nodes and only repositions them; nodes are created or
@@ -454,5 +599,20 @@ private final class SegmentSprite: SKSpriteNode {
         if let glow {
             aura.color = glow
         }
+    }
+
+    /// A brief wash of `color` over the segment (and its glow) that fades over
+    /// `duration`: added light on a copy of its own texture, so it shows over
+    /// any power-up tint without disturbing it.
+    func flash(color: SKColor, alpha: CGFloat, duration: TimeInterval) {
+        guard let texture else { return }
+        let overlay = SKSpriteNode(texture: texture)
+        overlay.color = color
+        overlay.colorBlendFactor = 1
+        overlay.blendMode = .add
+        overlay.alpha = alpha
+        overlay.zPosition = 0.2
+        overlay.run(.sequence([.fadeOut(withDuration: duration), .removeFromParent()]))
+        addChild(overlay)
     }
 }

@@ -17,6 +17,32 @@ final class GameManager {
     private var powerUp: PowerUp?
     private var bombs: [Bomb] = []
     private var walls: Walls?
+    /// Adventure: which `AdventureStage` the run is on, and its boss (one of
+    /// these, depending on the stage; both nil in the other modes).
+    private var stageIndex = 0
+    private var stage: AdventureStage { AdventureStage.all[stageIndex] }
+    private var kraken: Kraken?
+    private var moray: Moray?
+    private var boss: Boss? { kraken ?? moray }
+
+    /// Adventure: seconds left of the beaten boss's send-off before the stage is
+    /// reported cleared (the game plays on meanwhile). Nil otherwise.
+    private var stageClearCountdown: TimeInterval?
+    private let stageClearDelay: TimeInterval = 3.0
+
+    /// True from a new Adventure run's start until `releaseStart()`: the board is
+    /// set up but frozen while the voyage chart shows where the run begins.
+    private var isWaitingToStart = false
+    /// Adventure's rolling pushables (barrels, the stepping kind, are bombs).
+    private var cannonballs: [Cannonball] = []
+
+    /// Adventure only: a second fruit, always on the board like the mango. Eating
+    /// `mineFruitPerMine` of them earns a mine the player drops with a tap
+    /// (`dropMine()`). It doesn't grow the snake, score or speed it up.
+    private var mineFruit: Food?
+    private static let mineFruitPerMine = 3
+    private var mineFruitTowardNext = 0
+    private var minesReady = 0
 
     /// Index into Level.all. Only meaningful in .levels mode.
     private var currentLevelIndex = 0
@@ -98,11 +124,75 @@ final class GameManager {
     private var timeSinceLastMove: TimeInterval = 0
     private var lastUpdateTime: TimeInterval = 0
 
+    /// Lives per run: three in Adventure, one elsewhere (so in Free play and
+    /// Levels any hit still ends the run, exactly as before).
+    private var maxLives: Int { mode == .adventure ? 3 : 1 }
+    private(set) var lives = 0
+    /// After a hit that doesn't end the run, the snake blinks and can't be hurt
+    /// again for this long, in real seconds (like bomb-eater's timer). Walls
+    /// still stop it; they just don't cost a life until this runs out.
+    private let hitGraceDuration: TimeInterval = 2.0
+    private var hitGraceRemaining: TimeInterval = 0
+    /// True while the snake is stopped against a barrier, so the kraken aims at
+    /// where it is rather than where it was headed.
+    private var isSnakeBlocked = false
+
     private(set) var isGameOver = false
     private(set) var score = 0
 
     var onScoreChanged: ((Int) -> Void)?
     var onGameOver: (() -> Void)?
+    /// The boss's name and lives whenever they change, or nil when there's no
+    /// boss this run (anything but Adventure).
+    struct BossStatus: Equatable {
+        let name: String
+        let lives: Int
+        let maxLives: Int
+    }
+    var onBossChanged: ((BossStatus?) -> Void)?
+
+    /// Adventure: a stage's boss has been beaten and its send-off has played. The
+    /// game is frozen (`isAwaitingNextLevel`) until `beginNextStage()`, or a new
+    /// run. Passes the cleared stage's index into `AdventureStage.all`.
+    var onStageCleared: ((Int) -> Void)?
+    /// The snake's remaining lives whenever they change, or nil in modes where it
+    /// only has the one (there's nothing to show).
+    var onLivesChanged: ((Int?) -> Void)?
+
+    /// Mine fruit progress and mines ready to drop, whenever either changes; nil
+    /// in modes without mine fruit (anything but Adventure).
+    struct MineSupply: Equatable {
+        /// Mine fruit eaten toward the next mine, 0..<`fruitPerMine`.
+        let progress: Int
+        /// Mines ready to drop with a tap.
+        let ready: Int
+        static let fruitPerMine = GameManager.mineFruitPerMine
+    }
+    var onMineSupplyChanged: ((MineSupply?) -> Void)?
+
+    /// Moments worth feeling: GameScene turns these into camera shake (Adventure)
+    /// and haptics. An explosion carries its scene position, so ones off screen
+    /// can be ignored.
+    enum Jolt {
+        case hit
+        case death
+        case explosion(CGPoint)
+        /// The snake shoved something.
+        case push
+        /// The player dropped a mine.
+        case drop
+    }
+    var onJolt: ((Jolt) -> Void)?
+
+    /// What hurt the snake, for how the hit looks (`showImpact`).
+    private enum Hurt {
+        /// It pressed into a barrier at this cell.
+        case barrier(GridPoint)
+        case bomb
+        case blast
+        case tentacle
+        case bite
+    }
 
     init(scene: SKScene, mode: GameMode, columns: Int, rows: Int, cellSize: CGFloat, origin: CGPoint) {
         self.scene = scene
@@ -113,7 +203,9 @@ final class GameManager {
         self.origin = origin
     }
 
-    func startNewGame() {
+    /// A fresh run. `holdingForCue` freezes the new board until `releaseStart()`
+    /// (Adventure's first run, while the voyage chart shows where it begins).
+    func startNewGame(holdingForCue: Bool = false) {
         snake?.removeFromScene()
         food?.removeFromScene()
         powerUp?.removeFromScene()
@@ -122,9 +214,22 @@ final class GameManager {
         bombs.removeAll()
         walls?.removeFromScene()
         walls = nil
+        kraken?.removeFromScene()
+        kraken = nil
+        moray?.removeFromScene()
+        moray = nil
+        cannonballs.forEach { $0.removeFromScene() }
+        cannonballs.removeAll()
+        mineFruit?.removeFromScene()
+        mineFruit = nil
+        mineFruitTowardNext = 0
+        minesReady = 0
 
         isGameOver = false
         score = 0
+        lives = maxLives
+        hitGraceRemaining = 0
+        isSnakeBlocked = false
         moveInterval = startingMoveInterval
         timeSinceLastMove = 0
         lastUpdateTime = 0
@@ -133,8 +238,12 @@ final class GameManager {
         currentLevelIndex = 0
         levelProgress = 0
         isAwaitingNextLevel = false
+        isWaitingToStart = holdingForCue
+        stageIndex = 0
+        stageClearCountdown = nil
 
-        let start = GridPoint(x: columns / 2, y: rows / 2)
+        // Adventure's stages put their bosses in the middle.
+        let start = mode == .adventure ? stage.snakeStart : GridPoint(x: columns / 2, y: rows / 2)
         let newSnake = Snake(startingAt: start, length: 3, direction: .right, cellSize: cellSize, origin: origin)
         if let scene {
             newSnake.addToScene(scene)
@@ -145,11 +254,7 @@ final class GameManager {
         case .levels:
             loadCurrentLevelWalls()
         case .adventure:
-            let newWalls = Walls(positions: AdventureMap.walls, cellSize: cellSize, origin: origin)
-            if let scene {
-                newWalls.addToScene(scene)
-            }
-            walls = newWalls
+            loadAdventureStage()
         case .freePlay:
             break
         }
@@ -160,13 +265,134 @@ final class GameManager {
         }
         food = newFood
 
+        if mode == .adventure {
+            let newMineFruit = Food(kind: .mineFruit, columns: columns, rows: rows, cellSize: cellSize, origin: origin,
+                                    avoiding: occupiedBySnakeWallsAndBombs + [newFood.position])
+            if let scene {
+                newMineFruit.addToScene(scene)
+            }
+            mineFruit = newMineFruit
+        }
+
         onScoreChanged?(score)
+        onLivesChanged?(maxLives > 1 ? lives : nil)
+        reportMineSupply()
+        reportBoss()
     }
 
-    /// The snake's own body plus the current level's walls, if any -- the
-    /// baseline every spawn/relocate call should avoid landing on.
+    /// Lets a run held by `startNewGame(holdingForCue:)` begin.
+    func releaseStart() {
+        guard isWaitingToStart else { return }
+        isWaitingToStart = false
+        lastUpdateTime = 0
+        timeSinceLastMove = 0
+    }
+
+    /// Adventure: sets the world up for the current `stage`: its walls, its boss
+    /// and its fixtures, clearing whatever the last stage left (bombs included).
+    /// The snake, fruit and lives are the callers' business.
+    private func loadAdventureStage() {
+        walls?.removeFromScene()
+        let newWalls = Walls(positions: stage.walls, cellSize: cellSize, origin: origin)
+        if let scene {
+            newWalls.addToScene(scene)
+        }
+        walls = newWalls
+
+        kraken?.removeFromScene()
+        kraken = nil
+        moray?.removeFromScene()
+        moray = nil
+        bombs.forEach { $0.removeFromScene() }
+        bombs.removeAll()
+        cannonballs.forEach { $0.removeFromScene() }
+        cannonballs.removeAll()
+        stageClearCountdown = nil
+
+        switch stage.boss {
+        case .kraken(let lair):
+            let newKraken = Kraken(center: lair, columns: columns, rows: rows, cellSize: cellSize, origin: origin)
+            if let scene {
+                newKraken.addToScene(scene)
+            }
+            kraken = newKraken
+        case .moray(let body):
+            let newMoray = Moray(body: body, columns: columns, rows: rows, cellSize: cellSize, origin: origin)
+            if let scene {
+                newMoray.addToScene(scene)
+            }
+            moray = newMoray
+        }
+
+        for position in stage.barrels {
+            let barrel = Bomb(kind: .barrel, position: position, cellSize: cellSize, origin: origin)
+            if let scene {
+                barrel.addToScene(scene)
+            }
+            bombs.append(barrel)
+        }
+        for position in stage.cannonballs {
+            let cannonball = Cannonball(position: position, cellSize: cellSize, origin: origin)
+            if let scene {
+                cannonball.addToScene(scene)
+            }
+            cannonballs.append(cannonball)
+        }
+        minesReady += stage.startingMines
+    }
+
+    /// Adventure: on to the next stage, once the player has moved on from the
+    /// chart. Score, length, speed and banked mines carry over; lives refill.
+    func beginNextStage() {
+        guard mode == .adventure, isAwaitingNextLevel, stageIndex + 1 < AdventureStage.all.count else { return }
+        stageIndex += 1
+        loadAdventureStage()
+
+        snake.recenter(at: stage.snakeStart, direction: .right)
+        powerUp?.removeFromScene()
+        powerUp = nil
+        food.relocate(columns: columns, rows: rows, avoiding: occupiedBySnakeWallsAndBombs)
+        mineFruit?.relocate(columns: columns, rows: rows, avoiding: occupiedBySnakeWallsAndBombs + [food.position])
+
+        lives = maxLives
+        hitGraceRemaining = 0
+        isSnakeBlocked = false
+        timeSinceLastMove = 0
+        lastUpdateTime = 0
+        isAwaitingNextLevel = false
+
+        onLivesChanged?(lives)
+        reportMineSupply()
+        reportBoss()
+    }
+
+    private func reportBoss() {
+        guard mode == .adventure, let boss else {
+            onBossChanged?(nil)
+            return
+        }
+        onBossChanged?(BossStatus(name: stage.bossName, lives: boss.lives, maxLives: type(of: boss).maxLives))
+    }
+
+    /// A blow landed on the boss: costs it a life (unless it's still recovering),
+    /// and if that was its last, its send-off starts the stage clear.
+    private func strike(_ boss: Boss) {
+        guard boss.takeHit() else { return }
+        reportBoss()
+        if boss.isDefeated {
+            stageClearCountdown = stageClearDelay
+        }
+    }
+
+    /// The snake's own body plus the current level's walls, the kraken's lair,
+    /// anything pushable and the mine fruit, if any -- the baseline every
+    /// spawn/relocate call should avoid landing on.
     private var occupiedBySnakeAndWalls: [GridPoint] {
-        snake.segments + Array(walls?.positions ?? [])
+        snake.segments
+            + Array(walls?.positions ?? [])
+            + Array(boss?.cells ?? [])
+            + pushables.map(\.position)
+            + [mineFruit?.position].compactMap { $0 }
     }
 
     /// `occupiedBySnakeAndWalls` plus every current bomb position -- food
@@ -178,18 +404,18 @@ final class GameManager {
     }
 
     /// World-space position of the snake's head -- GameScene uses this to
-    /// drive Adventure mode's camera. Meaningless (but harmless) elsewhere.
+    /// drive Adventure mode's camera, and the kraken's eyes follow it.
     var headWorldPosition: CGPoint {
         GridGeometry.position(for: snake.head, cellSize: cellSize, origin: origin)
     }
 
     func turn(to direction: Direction) {
-        guard !isGameOver, !isAwaitingNextLevel else { return }
+        guard !isGameOver, !isAwaitingNextLevel, !isWaitingToStart else { return }
         snake.turn(to: direction)
     }
 
     func tick(currentTime: TimeInterval) {
-        guard !isGameOver, !isAwaitingNextLevel else { return }
+        guard !isGameOver, !isAwaitingNextLevel, !isWaitingToStart else { return }
 
         if lastUpdateTime == 0 {
             lastUpdateTime = currentTime
@@ -197,38 +423,60 @@ final class GameManager {
         let delta = currentTime - lastUpdateTime
         lastUpdateTime = currentTime
 
+        if let countdown = stageClearCountdown {
+            if countdown - delta <= 0 {
+                stageClearCountdown = nil
+                isAwaitingNextLevel = true
+                onStageCleared?(stageIndex)
+                return
+            }
+            stageClearCountdown = countdown - delta
+        }
+
         updateBombEaterTimer(delta: delta)
+        hitGraceRemaining = max(0, hitGraceRemaining - delta)
         updateBombs(delta: delta)
+        guard !isGameOver else { return }
+        updateKraken(delta: delta)
+        guard !isGameOver else { return }
+        updateMoray(delta: delta)
         guard !isGameOver else { return }
 
         timeSinceLastMove += delta
         guard timeSinceLastMove >= moveInterval else { return }
         timeSinceLastMove = 0
 
-        switch snake.advance(columns: columns, rows: rows, foodPosition: food.position, halvedGrowth: mode == .levels) {
+        var result = advanceSnake()
+        // Something pushable in the way gets shoved instead, if it has anywhere to
+        // go, and then the snake moves into the cell it left. A blocked advance
+        // commits nothing, so trying again resolves the same move.
+        if case .blocked(let cell) = result,
+           let object = pushables.first(where: { $0.position == cell }),
+           push(object, awayFrom: snake.head) {
+            result = advanceSnake()
+        }
+        if case .blocked = result {
+            isSnakeBlocked = true
+        } else {
+            isSnakeBlocked = false
+        }
+
+        switch result {
         case .moved:
             break
         case .ateFood:
-            score += 1
-            onScoreChanged?(score)
-            food.relocate(columns: columns, rows: rows, avoiding: occupiedBySnakeWallsAndBombs)
-            moveInterval = max(0.08, moveInterval - 0.004)
-            attemptBombSpawn()
-            if mode == .levels {
-                advanceLevelProgress()
-            }
-        case .collided:
-            isGameOver = true
-            onGameOver?()
+            scoreFruit()
+        case .blocked(let cell):
+            // Stopped against a wall, the lair or its own body: it stays put, and
+            // every tick it's still pressing in tries to hurt it, which only lands
+            // once the grace period from the last hit is over. No power-up
+            // protects against this. Nothing else happens on a tick it didn't move.
+            hurtPlayer(.barrier(cell))
             return
         }
 
-        // Walls are absolute -- no power-up grants immunity to them, so this
-        // is checked immediately, unlike the bomb-eater/bomb interplay below.
-        if let walls, walls.contains(snake.head) {
-            isGameOver = true
-            onGameOver?()
-            return
+        if let mineFruit, mineFruit.position == snake.head {
+            collectMineFruit(mineFruit)
         }
 
         armSensorBombsNearHead()
@@ -242,19 +490,39 @@ final class GameManager {
             self.powerUp = nil
         }
 
-        let bombsAtHead = bombs.filter { $0.position == snake.head }
+        // Touching a bomb sets it off: it explodes either way, and it costs a
+        // life unless bomb-eater is active (or the snake is still in its grace
+        // period).
+        // A barrel primed on a mine has made that cell safe: the snake swims right
+        // through both.
+        let bombsAtHead = bombs.filter { $0.position == snake.head && $0.kind != .barrel && !$0.isUnderBarrel && !$0.isExpired }
         if !bombsAtHead.isEmpty {
-            if isBombEaterActive {
-                bombsAtHead.forEach { $0.removeFromScene() }
-                bombs.removeAll { $0.position == snake.head }
-            } else {
-                isGameOver = true
-                onGameOver?()
-                return
+            if let scene {
+                bombsAtHead.forEach { $0.explode(in: scene) }
+            }
+            bombs.removeAll { bomb in bombsAtHead.contains { $0 === bomb } }
+            onJolt?(.explosion(headWorldPosition))
+            if !isBombEaterActive {
+                hurtPlayer(.bomb)
+                guard !isGameOver else { return }
             }
         }
 
         attemptPowerUpSpawn()
+    }
+
+    /// A mango eaten, whether by the head or by something the snake pushed into
+    /// it: the score goes up, the fruit moves, the snake speeds up a touch, a bomb
+    /// may spawn, and Levels progress advances. (Growth is `Snake`'s side.)
+    private func scoreFruit() {
+        score += 1
+        onScoreChanged?(score)
+        food.relocate(columns: columns, rows: rows, avoiding: occupiedBySnakeWallsAndBombs)
+        moveInterval = max(0.08, moveInterval - 0.004)
+        attemptBombSpawn()
+        if mode == .levels {
+            advanceLevelProgress()
+        }
     }
 
     /// Tracks progress toward the *current* level's threshold, separate
@@ -460,6 +728,12 @@ final class GameManager {
             guard !isGameOver else { return }
         }
 
+        // Barrels whose fuse ran out on top of the bomb they were pushed onto.
+        for barrel in bombs where barrel.hasFuseRunOut && !barrel.isExpired {
+            detonate(barrel)
+            guard !isGameOver else { return }
+        }
+
         bombs.removeAll(where: \.isExpired)
     }
 
@@ -478,33 +752,310 @@ final class GameManager {
     /// it, checked separately for this bomb and for each barrel below).
     private func resolveSensorDetonation(at position: GridPoint) {
         let vicinity = GameManager.vicinity(of: position, columns: columns, rows: rows)
+        onJolt?(.explosion(GridGeometry.position(for: position, cellSize: cellSize, origin: origin)))
 
         if !isBombEaterActive && vicinity.contains(snake.head) {
-            isGameOver = true
-            onGameOver?()
-            return
+            hurtPlayer(.blast)
+            guard !isGameOver else { return }
         }
 
+        // The mines it clears go off too, one after another just behind the
+        // sensor's own blast, so the chain reads in order.
         let minesToRemove = bombs.filter { $0.kind == .mine && vicinity.contains($0.position) }
-        minesToRemove.forEach { $0.removeFromScene() }
+        if let scene {
+            for (index, mine) in minesToRemove.enumerated() {
+                mine.explode(in: scene, delay: 0.12 + 0.08 * Double(index))
+            }
+        }
         bombs.removeAll { $0.kind == .mine && vicinity.contains($0.position) }
 
         for other in bombs where other.kind == .sensor && vicinity.contains(other.position) {
             other.arm()
         }
 
-        let barrelsToExplode = bombs.filter { $0.kind == .barrel && vicinity.contains($0.position) }
+        let barrelsToExplode = bombs.filter { $0.kind == .barrel && !$0.isExpired && vicinity.contains($0.position) }
         for barrel in barrelsToExplode {
-            let hitsHead = !isBombEaterActive && GameManager.cross(at: barrel.position, contains: snake.head)
-            if let scene {
-                barrel.explodeBarrel(columns: columns, rows: rows, scene: scene)
+            detonate(barrel)
+            guard !isGameOver else { return }
+        }
+    }
+
+    /// A barrel going off, whether a sensor's blast set it off or its own fuse
+    /// did after it was pushed onto a bomb: beams down its whole row and column
+    /// (`Bomb.explodeBarrel`). They hurt the boss if they cross it (the kraken's
+    /// lair, the moray's head), and the snake if its head is on that row or column (unless
+    /// bomb-eater is active; the beams passing through its body are harmless).
+    /// The bomb it was primed on goes off with it. Callers check `isGameOver`.
+    private func detonate(_ barrel: Bomb) {
+        let hitsHead = !isBombEaterActive && GameManager.cross(at: barrel.position, contains: snake.head)
+        let trigger = barrel.primedOn.flatMap { primed in bombs.contains { $0 === primed } ? primed : nil }
+        if let scene {
+            barrel.explodeBarrel(columns: columns, rows: rows, scene: scene)
+            trigger?.explode(in: scene)
+        }
+        if let trigger {
+            bombs.removeAll { $0 === trigger }
+        }
+        onJolt?(.explosion(GridGeometry.position(for: barrel.position, cellSize: cellSize, origin: origin)))
+
+        // Counted even if the same blast ends the snake's run.
+        if let boss, boss.isCrossed(byBlastFrom: barrel.position) {
+            strike(boss)
+        }
+        if hitsHead {
+            hurtPlayer(.blast)
+        }
+    }
+
+    // MARK: Pushing
+
+    /// Everything the snake shoves rather than stops against (`Pushable`): barrels
+    /// (including one primed on a mine, which is no longer solid) and cannonballs.
+    /// A future movable object gets added here.
+    private var pushables: [Pushable] {
+        let barrels: [Pushable] = bombs.filter { $0.kind == .barrel && !$0.isExpired }
+        return barrels + cannonballs
+    }
+
+    private func advanceSnake() -> SnakeAdvanceResult {
+        snake.advance(
+            columns: columns,
+            rows: rows,
+            foodPosition: food.position,
+            halvedGrowth: mode == .levels,
+            isBlocked: isBarrier
+        )
+    }
+
+    /// Shoves `object` away from the head next to it (see `route(of:heading:)`).
+    /// Returns false, leaving it be, if it can't move at all; then it's as solid
+    /// as a wall, and bumping it costs a life like one. Fruit it touches on the
+    /// way counts as eaten by the snake. A barrel pushed onto a bomb primes on
+    /// top of it, its fuse starting once its move is over.
+    private func push(_ object: Pushable, awayFrom head: GridPoint) -> Bool {
+        guard object.isSolid else { return false }
+        let heading = GameManager.step(from: head, to: object.position)
+        let path = route(of: object, heading: heading)
+        guard path.cells > 0 else { return false }
+
+        let duration = object.move(to: path.destination, cells: path.cells)
+        collectFruit(along: path.touched)
+        onJolt?(.push)
+        if let trigger = path.landedOn, let barrel = object as? Bomb {
+            barrel.prime(on: trigger, after: duration)
+        }
+        return true
+    }
+
+    /// Where a push takes `object` along `heading`: one cell for something that
+    /// steps, as far as it goes for something that rolls. It stops before a
+    /// barrier (wall, lair, another solid pushable), the snake, the power-up or
+    /// the map's edge -- pushables don't wrap like the snake, since a roll around
+    /// an open row would never end. Fruit doesn't stop it. A bomb ahead stops it in
+    /// front, unless it `landsOnBombs` (a barrel), which stops it on top
+    /// (`landedOn`) -- not on one another barrel is already primed on, though.
+    private func route(of object: Pushable, heading: (dx: Int, dy: Int)) -> (destination: GridPoint, cells: Int, touched: [GridPoint], landedOn: Bomb?) {
+        let limit = object.pushStyle == .step ? 1 : max(columns, rows)
+        var cell = object.position
+        var touched: [GridPoint] = []
+        while touched.count < limit {
+            let next = GridPoint(x: cell.x + heading.dx, y: cell.y + heading.dy)
+            guard next.x >= 0, next.x < columns, next.y >= 0, next.y < rows,
+                  !isBarrier(next), !snake.segments.contains(next), next != powerUp?.position
+            else { break }
+
+            if let bomb = bombs.first(where: { $0.position == next && $0.kind != .barrel && !$0.isExpired }) {
+                guard object.landsOnBombs, !bomb.isUnderBarrel else { break }
+                touched.append(next)
+                return (next, touched.count, touched, bomb)
             }
-            if hitsHead {
-                isGameOver = true
-                onGameOver?()
-                return
+            cell = next
+            touched.append(next)
+        }
+        return (cell, touched.count, touched, nil)
+    }
+
+    /// Fruit a pushed object touched on its way (every cell it passed through or
+    /// came to rest on) counts as eaten by the snake: the mango scores and grows
+    /// it, mine fruit counts toward a mine.
+    private func collectFruit(along cells: [GridPoint]) {
+        for cell in cells {
+            if food.position == cell {
+                snake.feed(halvedGrowth: mode == .levels)
+                scoreFruit()
+            }
+            if let mineFruit, mineFruit.position == cell {
+                collectMineFruit(mineFruit)
             }
         }
+    }
+
+    // MARK: Mines
+
+    /// Eaten: counts toward the next mine, and moves elsewhere like the mango does.
+    private func collectMineFruit(_ fruit: Food) {
+        mineFruitTowardNext += 1
+        if mineFruitTowardNext >= GameManager.mineFruitPerMine {
+            mineFruitTowardNext = 0
+            minesReady += 1
+        }
+        fruit.relocate(columns: columns, rows: rows, avoiding: occupiedBySnakeWallsAndBombs + [food.position])
+        reportMineSupply()
+    }
+
+    /// The player tapped: drops a ready mine right where the head is. Only a
+    /// head ever touches a mine, and this one is on its way out -- the mine check
+    /// only runs after the snake moves, and its body passing over is harmless --
+    /// so the snake leaves it behind safely. Ignored with no mine ready, or if a
+    /// bomb is already there.
+    func dropMine() {
+        guard !isGameOver, !isAwaitingNextLevel, !isWaitingToStart, minesReady > 0 else { return }
+        let cell = snake.head
+        guard !bombs.contains(where: { $0.position == cell && !$0.isExpired }) else { return }
+
+        minesReady -= 1
+        let mine = Bomb(kind: .mine, position: cell, cellSize: cellSize, origin: origin)
+        if let scene {
+            mine.addToScene(scene)
+            BoardEffects.bubbleBurst(at: headWorldPosition, count: 6, cellSize: cellSize, in: scene)
+        }
+        bombs.append(mine)
+        onJolt?(.drop)
+        reportMineSupply()
+    }
+
+    private func reportMineSupply() {
+        onMineSupplyChanged?(mineFruit == nil ? nil : MineSupply(progress: mineFruitTowardNext, ready: minesReady))
+    }
+
+    /// The one-cell step from `point` to its neighbor `next`, undoing a wrap
+    /// across the map's edge (where the raw difference is the map's width or
+    /// height, not 1).
+    private static func step(from point: GridPoint, to next: GridPoint) -> (dx: Int, dy: Int) {
+        func unwrap(_ delta: Int) -> Int {
+            abs(delta) > 1 ? (delta > 0 ? -1 : 1) : delta
+        }
+        return (unwrap(next.x - point.x), unwrap(next.y - point.y))
+    }
+
+    /// Advances the kraken's strikes by real time, like the bomb timers, so they
+    /// don't speed up with the snake. A strike hits only while its tentacle is up,
+    /// anywhere in its patch, and only the head counts -- same rule as a barrel
+    /// blast. Bomb-eater doesn't protect against it: tentacles aren't bombs.
+    private func updateKraken(delta: TimeInterval) {
+        guard let kraken else { return }
+        // Aim new strikes where the head will be when their tentacle comes up, if
+        // it keeps going: around its current cell, a snake swimming straight would
+        // always outrun the warning. (Off the map is fine; the kraken clamps it.)
+        let lead = isSnakeBlocked ? 0 : Int(TentacleStrike.warningDuration / moveInterval)
+        let heading = snake.direction.vector
+        let aim = GridPoint(x: snake.head.x + heading.dx * lead, y: snake.head.y + heading.dy * lead)
+        kraken.update(delta: delta, aim: aim)
+        if kraken.isStriking(snake.head) {
+            hurtPlayer(.tentacle)
+        }
+    }
+
+    /// Lets the moray take its next step, if one's due. Into the snake, that's a
+    /// bite; into a bomb (it can't see them), the bomb goes off and the moray takes
+    /// the hit.
+    private func updateMoray(delta: TimeInterval) {
+        guard let moray, !moray.isDefeated,
+              let next = moray.update(delta: delta, target: snake.head, isOpen: isOpenForMoray)
+        else { return }
+
+        if snake.segments.contains(next) {
+            moray.bite(at: next)
+            hurtPlayer(.bite)
+            return
+        }
+
+        moray.advance(to: next)
+        let struck = bombs.filter { $0.position == next && $0.kind != .barrel && !$0.isUnderBarrel && !$0.isExpired }
+        guard !struck.isEmpty else { return }
+        if let scene {
+            struck.forEach { $0.explode(in: scene) }
+        }
+        bombs.removeAll { bomb in struck.contains { $0 === bomb } }
+        onJolt?(.explosion(GridGeometry.position(for: next, cellSize: cellSize, origin: origin)))
+        strike(moray)
+    }
+
+    /// Where the moray may go: not into walls or anything solid and pushable, but
+    /// yes into the snake (what it's after) and into mines (it can't see them).
+    private func isOpenForMoray(_ cell: GridPoint) -> Bool {
+        !(walls?.contains(cell) ?? false) && !pushables.contains { $0.isSolid && $0.position == cell }
+    }
+
+    /// Every way the snake gets hurt comes through here: costs a life, unless it's
+    /// still in its grace period from the last hit. Callers check `isGameOver`
+    /// afterwards to decide whether to carry on.
+    ///
+    /// - Not the last life: a red flash and shudder, then it blinks, untouchable,
+    ///   for `hitGraceDuration`.
+    /// - The last life: the run stops at once (`isGameOver`), but `onGameOver`, and
+    ///   so the overlay, waits for the snake's death animation to finish.
+    private func hurtPlayer(_ hurt: Hurt) {
+        guard !isGameOver, hitGraceRemaining <= 0 else { return }
+        lives -= 1
+        if maxLives > 1 {
+            onLivesChanged?(lives)
+        }
+        showImpact(hurt)
+
+        guard lives > 0 else {
+            isGameOver = true
+            onJolt?(.death)
+            snake.playDeath { [weak self] in
+                self?.onGameOver?()
+            }
+            return
+        }
+        onJolt?(.hit)
+        hitGraceRemaining = hitGraceDuration
+        snake.playHitImpact()
+        snake.playHitBlink(duration: hitGraceDuration)
+    }
+
+    /// Where the hit happened: a bump throws up a puff where the head met the
+    /// barrier, a tentacle a red splash at the head. Bombs and blasts bring their
+    /// own explosions.
+    private func showImpact(_ hurt: Hurt) {
+        guard let scene else { return }
+        let head = headWorldPosition
+        switch hurt {
+        case .barrier(let cell):
+            // Half a cell toward the barrier, worked out from the step rather than
+            // the barrier's position, which may be across a wrap.
+            func unwrap(_ delta: Int) -> CGFloat {
+                CGFloat(abs(delta) > 1 ? (delta > 0 ? -1 : 1) : delta)
+            }
+            let contact = CGPoint(
+                x: head.x + unwrap(cell.x - snake.head.x) * cellSize / 2,
+                y: head.y + unwrap(cell.y - snake.head.y) * cellSize / 2
+            )
+            BoardEffects.impact(at: contact, color: SKColor(named: "Foam") ?? .white, cellSize: cellSize, in: scene)
+        case .tentacle, .bite:
+            BoardEffects.impact(at: head, color: SKColor(red: 1, green: 0.3, blue: 0.3, alpha: 1), cellSize: cellSize, in: scene)
+        case .bomb, .blast:
+            break
+        }
+    }
+
+    /// Cells the snake stops against instead of entering: walls, the boss (the
+    /// kraken's lair, the moray's body) and anything solid and pushable (which the tick then tries to shove out of the
+    /// way). Its own body is the snake's business; see `Snake.advance`.
+    private func isBarrier(_ point: GridPoint) -> Bool {
+        (walls?.contains(point) ?? false)
+            || (boss?.cells.contains(point) ?? false)
+            || pushables.contains { $0.isSolid && $0.position == point }
+    }
+
+    /// Poses anything animated by the clock rather than by ticks (the kraken), for
+    /// `time` (`AmbientClock` seconds). Called every frame, including after a game
+    /// over, so the boss keeps moving behind the overlay.
+    func animate(time: Double) {
+        kraken?.animate(time: time, focus: headWorldPosition)
     }
 
     /// Whether `point` lies on `center`'s row or column -- the cross a
