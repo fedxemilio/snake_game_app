@@ -909,18 +909,16 @@ final class GameManager {
     /// way counts as eaten by the snake. A barrel pushed onto a bomb primes on
     /// top of it, its fuse starting once its move is over.
     ///
-    /// A cannonball that rolls up into the galleon's hull holes it instead: see
-    /// `fire(_:along:heading:)`. That works point blank too, from right under it.
-    /// One that rolls into the moray, anywhere along its body, hurts it as it
-    /// arrives, and comes to rest against it, ready to be pushed again. That one
-    /// needs a run-up: a ball already touching the moray just won't move.
+    /// A cannonball that rolls into a boss cannonballs hurt (`cannonballTarget`)
+    /// breaks against it instead: see `fire(_:along:heading:at:)`. That works
+    /// point blank too, from right next to it.
     private func push(_ object: Pushable, awayFrom head: GridPoint) -> Bool {
         guard object.isSolid else { return false }
         let heading = GameManager.step(from: head, to: object.position)
         let path = route(of: object, heading: heading)
         let beyond = GridPoint(x: path.destination.x + heading.dx, y: path.destination.y + heading.dy)
-        if let ball = object as? Cannonball, let galleon, galleon.cells.contains(beyond) {
-            fire(ball, along: path, heading: heading)
+        if let ball = object as? Cannonball, let target = cannonballTarget, target.cells.contains(beyond) {
+            fire(ball, along: path, heading: heading, at: target)
             return true
         }
         guard path.cells > 0 else { return false }
@@ -930,11 +928,6 @@ final class GameManager {
         onJolt?(.push)
         if let trigger = path.landedOn, let barrel = object as? Bomb {
             barrel.prime(on: trigger, after: duration)
-        }
-        if object is Cannonball, let moray, moray.cells.contains(beyond) {
-            let stop = GridGeometry.position(for: path.destination, cellSize: cellSize, origin: origin)
-            let contact = CGPoint(x: stop.x + CGFloat(heading.dx) * cellSize / 2, y: stop.y + CGFloat(heading.dy) * cellSize / 2)
-            cannonHits.append((duration, contact, moray))
         }
         return true
     }
@@ -972,23 +965,29 @@ final class GameManager {
     /// on, if it's a barrel that did.
     private typealias Route = (destination: GridPoint, cells: Int, touched: [GridPoint], landedOn: Bomb?)
 
-    /// A cannonball pushed up into the galleon's hull: it rolls up, smashes in and
-    /// is gone, and the hit lands as it gets there (`updateCannonHits`). Fruit it
+    /// The boss cannonballs hurt, if this stage's is one: the galleon (its hull)
+    /// or the moray (anywhere along it). The kraken shrugs them off.
+    private var cannonballTarget: Boss? {
+        if let galleon { return galleon }
+        return moray
+    }
+
+    /// A cannonball pushed into `target`: it rolls there, smashes into it and is
+    /// gone, and the hit lands as it gets there (`updateCannonHits`). Fruit it
     /// passes still counts.
-    private func fire(_ ball: Cannonball, along path: Route, heading: (dx: Int, dy: Int)) {
+    private func fire(_ ball: Cannonball, along path: Route, heading: (dx: Int, dy: Int), at target: Boss) {
         let impact = ball.smash(rollingTo: path.destination, cells: path.cells, heading: heading)
         cannonballs.removeAll { $0 === ball }
         collectFruit(along: path.touched)
         onJolt?(.push)
-        let top = GridGeometry.position(for: path.destination, cellSize: cellSize, origin: origin)
-        if let galleon {
-            cannonHits.append((impact, CGPoint(x: top.x, y: top.y + cellSize / 2), galleon))
-        }
+        let stop = GridGeometry.position(for: path.destination, cellSize: cellSize, origin: origin)
+        let contact = CGPoint(x: stop.x + CGFloat(heading.dx) * cellSize / 2, y: stop.y + CGFloat(heading.dy) * cellSize / 2)
+        cannonHits.append((impact, contact, target))
     }
 
     /// Counts down the cannonballs on their way into a boss; each one that gets
     /// there costs it a life (if it isn't still recovering from the last): a hole
-    /// blown in the galleon's hull, a heavy thud into the moray.
+    /// blown in the galleon's hull, or the ball shattering against the moray.
     private func updateCannonHits(delta: TimeInterval) {
         guard !cannonHits.isEmpty else { return }
         for index in cannonHits.indices {
@@ -1002,7 +1001,8 @@ final class GameManager {
                     BoardEffects.explosion(at: hit.point, color: SKColor(red: 1, green: 0.6, blue: 0.3, alpha: 1),
                                            cellSize: cellSize, size: 1.4, in: scene)
                 } else {
-                    BoardEffects.impact(at: hit.point, color: SKColor(named: "Foam") ?? .white, cellSize: cellSize, in: scene)
+                    BoardEffects.explosion(at: hit.point, color: SKColor(named: "Foam") ?? .white,
+                                           cellSize: cellSize, size: 0.8, in: scene)
                 }
             }
             onJolt?(.explosion(hit.point))
