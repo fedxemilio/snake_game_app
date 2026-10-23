@@ -1,12 +1,14 @@
 import SwiftUI
 
 /// The start screen: living deep water (`LivingSea`), the floating title, a mode
-/// picker, and the "Dive in" orb. The pieces live in `StartMenu/`.
+/// picker, and the "Dive in" orb. The pieces live in `StartMenu/`. Debug builds
+/// also get a zen mode toggle at the bottom, for testing.
 ///
 /// Tapping the orb plays a short dive (the menu rushes toward the viewer and the
 /// water goes black) before `onPlay` hands off to the game.
 struct StartView: View {
     @Binding var mode: GameMode
+    @Binding var isZen: Bool
     let onPlay: () -> Void
 
     @State private var hasAppeared = false
@@ -42,6 +44,12 @@ struct StartView: View {
                     Spacer(minLength: 16)
                     Spacer(minLength: 16)
                 }
+
+                #if DEBUG
+                zenToggle
+                    .frame(maxHeight: .infinity, alignment: .bottom)
+                    .padding(.bottom, 28)
+                #endif
             }
             .scaleEffect(isDiving ? 1.4 : 1)
             .blur(radius: isDiving ? 8 : 0)
@@ -54,6 +62,7 @@ struct StartView: View {
         .statusBarHidden()
         .onAppear { hasAppeared = true }
         .sensoryFeedback(.selection, trigger: mode)
+        .sensoryFeedback(.selection, trigger: isZen)
         .sensoryFeedback(.impact(weight: .heavy), trigger: isDiving)
     }
 
@@ -117,6 +126,35 @@ struct StartView: View {
         removal: .offset(x: -28).combined(with: .opacity)
     )
 
+    // MARK: Zen
+
+    /// Zen mode on or off: a small pill that glows teal when it's on.
+    private var zenToggle: some View {
+        let glow = Color("BioluminescentGlow")
+        return Button {
+            isZen.toggle()
+        } label: {
+            Label("ZEN", systemImage: isZen ? "leaf.fill" : "leaf")
+                .font(.custom("Work Sans", size: 12).weight(.semibold))
+                .tracking(2)
+                .foregroundStyle(isZen ? glow : Color("Foam").opacity(0.5))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background {
+                    Capsule()
+                        .fill(Color("Abyss").opacity(0.55))
+                        .overlay(Capsule().strokeBorder(isZen ? glow.opacity(0.7) : Color("BoardBorder"), lineWidth: 1))
+                }
+                .shadow(color: glow.opacity(isZen ? 0.5 : 0), radius: 6)
+        }
+        .buttonStyle(.plain)
+        .opacity(hasAppeared ? 1 : 0)
+        .animation(.easeOut(duration: 1.4).delay(1.2), value: hasAppeared)
+        .accessibilityLabel("Zen mode")
+        .accessibilityValue(isZen ? "On" : "Off")
+        .accessibilityHint("Nothing can hurt the snake, and Adventure can start at any stage")
+    }
+
     // MARK: Dive
 
     private var diveButton: some View {
@@ -152,5 +190,5 @@ struct StartView: View {
 }
 
 #Preview {
-    StartView(mode: .constant(.freePlay), onPlay: {})
+    StartView(mode: .constant(.freePlay), isZen: .constant(false), onPlay: {})
 }
