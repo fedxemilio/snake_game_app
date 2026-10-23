@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// A boss beaten: its name over a floating carved "SLAIN", a soft gold light
-/// welling up behind it, and an orb to swim on to the voyage chart. Shown once the
-/// boss's own send-off (the kraken sinking, the moray coming apart) has played.
+/// A boss beaten: its name over a floating carved word for its fate ("SLAIN",
+/// "SUNK"), a soft gold light welling up behind it, and an orb to swim on to the
+/// voyage chart. Shown once the boss's own send-off (the kraken sinking, the moray
+/// coming apart, the galleon foundering) has played.
 struct VictoryOverlay: View {
     let stage: AdventureStage
     let onSwimOn: () -> Void
@@ -28,10 +29,10 @@ struct VictoryOverlay: View {
 
                 FloatingTitle(lines: [
                     FloatingTitle.Line(text: stage.bossName, fontSize: 30, tracking: 16, centerY: 0.24),
-                    FloatingTitle.Line(text: "SLAIN", fontSize: 72, tracking: 8, centerY: 0.64),
+                    FloatingTitle.Line(text: stage.victoryWord, fontSize: 72, tracking: 8, centerY: 0.64),
                 ])
 
-                Text("\(stage.name) lies behind you")
+                Text(stage.victoryLine)
                     .font(.custom("Work Sans", size: 15))
                     .foregroundStyle(Color("Foam").opacity(0.75))
                     .padding(.top, 4)

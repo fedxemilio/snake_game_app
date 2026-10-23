@@ -26,8 +26,9 @@ extension Kraken: Boss {
 ///
 /// It's **blind**: mines don't exist to it, so it swims straight into them. Drop
 /// mines in its path (it follows you, so behind you works) and each one costs it a
-/// life; a barrel's blast across its head does too. It gets faster with each life
-/// lost.
+/// life; so does a cannonball rolled into it anywhere along its body (handled in
+/// `GameManager.push`), and a barrel's blast across its head. It gets faster with
+/// each life lost.
 ///
 /// Like the board's other entities it owns its own state and nodes, and
 /// `GameManager` decides what its moves mean (`update` only says where it wants

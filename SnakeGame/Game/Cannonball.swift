@@ -3,7 +3,9 @@ import SpriteKit
 /// A heavy iron ball the snake can shove: one push and it rolls off in that
 /// direction until something stops it (see `Pushable` and
 /// `GameManager.push(_:awayFrom:)`). Bombs stop it like anything else; it doesn't
-/// set them off. It never breaks or goes away.
+/// set them off. Rolled into the moray it hurts it and comes to rest against it;
+/// the only thing it breaks against is the galleon's hull (`smash`). In the
+/// Shallows the galleon's own shot comes to rest as more of them.
 ///
 /// Owns its own position and node, like the board's other entities.
 final class Cannonball: Pushable {
@@ -54,5 +56,19 @@ final class Cannonball: Pushable {
         spin.timingMode = .easeOut
         node.run(.group([roll, spin]), withKey: "roll")
         return duration
+    }
+
+    /// Rolled into something it breaks against (the galleon's hull): rolls to
+    /// `destination` as `move` would, then carries on along `heading` into it and is
+    /// gone. Returns how long until it hits.
+    func smash(rollingTo destination: GridPoint, cells: Int, heading: (dx: Int, dy: Int)) -> TimeInterval {
+        let roll = move(to: destination, cells: cells)
+        let thrust: TimeInterval = 0.06
+        node.run(.sequence([
+            .wait(forDuration: roll),
+            .moveBy(x: CGFloat(heading.dx) * cellSize * 0.5, y: CGFloat(heading.dy) * cellSize * 0.5, duration: thrust),
+            .removeFromParent(),
+        ]))
+        return roll + thrust
     }
 }

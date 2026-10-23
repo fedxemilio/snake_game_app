@@ -3,6 +3,9 @@ import SpriteKit
 
 struct ContentView: View {
     let mode: GameMode
+    /// Zen mode (for testing): nothing costs a life, and Adventure's opening chart
+    /// lets any stop be picked to start at.
+    let isZen: Bool
     let onExitToHome: () -> Void
 
     @StateObject private var session = GameSessionState()
@@ -14,10 +17,11 @@ struct ContentView: View {
     @State private var isBetweenStages = false
     private let scene: GameScene
 
-    init(mode: GameMode, onExitToHome: @escaping () -> Void) {
+    init(mode: GameMode, isZen: Bool = false, onExitToHome: @escaping () -> Void) {
         self.mode = mode
+        self.isZen = isZen
         self.onExitToHome = onExitToHome
-        let scene = GameScene(mode: mode)
+        let scene = GameScene(mode: mode, isZen: isZen)
         scene.scaleMode = .resizeFill
         self.scene = scene
     }
@@ -30,7 +34,10 @@ struct ContentView: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 ScoreHUD(score: session.score)
-                if let lives = session.lives {
+                // In zen mode the hearts never change, so a badge says why.
+                if isZen {
+                    ZenHUD()
+                } else if let lives = session.lives {
                     LivesHUD(lives: lives)
                 }
                 if let supply = session.mineSupply {
@@ -95,7 +102,12 @@ struct ContentView: View {
                         session.voyage = nil
                         scene.startNewGame()
                     },
-                    onSurface: onExitToHome
+                    onSurface: onExitToHome,
+                    // Zen mode: at the start of a run, any stop can be picked.
+                    onPickStage: isZen && voyage.from == nil ? { index in
+                        session.voyage = Voyage(from: nil, to: index)
+                        scene.chooseStartingStage(index)
+                    } : nil
                 )
                 .transition(.opacity)
             }
@@ -198,6 +210,25 @@ private struct ScoreHUD: View {
                 .overlay(Capsule().strokeBorder(Color("BoardBorder"), lineWidth: 1))
         }
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// Zen mode's stand-in for the hearts: a teal leaf and "ZEN", under the score.
+private struct ZenHUD: View {
+    var body: some View {
+        Label("ZEN", systemImage: "leaf.fill")
+            .font(.custom("Work Sans", size: 11).weight(.semibold))
+            .tracking(2)
+            .foregroundStyle(Color("BioluminescentGlow"))
+            .shadow(color: Color("BioluminescentGlow").opacity(0.6), radius: 4)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background {
+                Capsule()
+                    .fill(Color("Abyss").opacity(0.6))
+                    .overlay(Capsule().strokeBorder(Color("BoardBorder"), lineWidth: 1))
+            }
+            .accessibilityLabel("Zen mode: nothing costs a life")
     }
 }
 

@@ -97,6 +97,35 @@ enum BoardEffects {
         }
     }
 
+    /// A ring of foam and a spray of droplets: something breaking the surface (a
+    /// tentacle coming up, a cannonball plunging in). `size` scales it.
+    static func splash(at point: CGPoint, size: CGFloat, cellSize: CGFloat, in parent: SKNode) {
+        let ring = SKSpriteNode(texture: SpriteArt.splashRing(cellSize: cellSize))
+        ring.position = point
+        ring.zPosition = 5.5
+        ring.setScale(0.3 * size)
+        let spread = SKAction.scale(to: 2.4 * size, duration: 0.6)
+        spread.timingMode = .easeOut
+        ring.run(.sequence([.group([spread, .fadeOut(withDuration: 0.6)]), .removeFromParent()]))
+        parent.addChild(ring)
+
+        let foam = SKColor(named: "Foam") ?? .white
+        for index in 0..<9 {
+            let droplet = SKSpriteNode(texture: SpriteArt.speck())
+            droplet.color = foam
+            droplet.colorBlendFactor = 1
+            droplet.position = point
+            droplet.zPosition = 5.6
+            droplet.setScale(CGFloat.random(in: 0.6...1.3) * size)
+            let angle = CGFloat(index) / 9 * 2 * .pi + .random(in: -0.3...0.3)
+            let distance = cellSize * CGFloat.random(in: 0.9...1.9) * size
+            let fling = SKAction.moveBy(x: cos(angle) * distance, y: sin(angle) * distance, duration: 0.5)
+            fling.timingMode = .easeOut
+            droplet.run(.sequence([.group([fling, .fadeOut(withDuration: 0.5)]), .removeFromParent()]))
+            parent.addChild(droplet)
+        }
+    }
+
     // MARK: Pieces
 
     /// Adds a holder node at `point`, builds the effect into it (after `delay`),

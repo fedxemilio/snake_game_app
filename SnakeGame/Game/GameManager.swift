@@ -10,6 +10,9 @@ final class GameManager {
     private let origin: CGPoint
 
     private let mode: GameMode
+    /// Zen mode, for testing: hits still show, but never cost a life, so a run
+    /// never ends (see `hurtPlayer`).
+    private let isZen: Bool
 
     private weak var scene: SKScene?
     private var snake: Snake!
@@ -23,7 +26,21 @@ final class GameManager {
     private var stage: AdventureStage { AdventureStage.all[stageIndex] }
     private var kraken: Kraken?
     private var moray: Moray?
-    private var boss: Boss? { kraken ?? moray }
+    private var galleon: Galleon?
+    private var boss: Boss? {
+        if let kraken { return kraken }
+        if let moray { return moray }
+        return galleon
+    }
+    /// Adventure: the storm over a stage that reaches the surface (the Shallows).
+    private var surface: StormSurface?
+    /// Cannonballs on their way into a boss that cannonballs hurt (the galleon's
+    /// hull, the moray): seconds until each hits, where, and whom
+    /// (`updateCannonHits`).
+    private var cannonHits: [(timeLeft: TimeInterval, point: CGPoint, target: Boss)] = []
+    /// The most loose cannonballs the galleon's shot leaves lying around; past
+    /// this, its shot breaks up where it lands.
+    private let maxLooseCannonballs = 6
 
     /// Adventure: seconds left of the beaten boss's send-off before the stage is
     /// reported cleared (the game plays on meanwhile). Nil otherwise.
@@ -194,9 +211,10 @@ final class GameManager {
         case bite
     }
 
-    init(scene: SKScene, mode: GameMode, columns: Int, rows: Int, cellSize: CGFloat, origin: CGPoint) {
+    init(scene: SKScene, mode: GameMode, isZen: Bool, columns: Int, rows: Int, cellSize: CGFloat, origin: CGPoint) {
         self.scene = scene
         self.mode = mode
+        self.isZen = isZen
         self.columns = columns
         self.rows = rows
         self.cellSize = cellSize
@@ -218,6 +236,11 @@ final class GameManager {
         kraken = nil
         moray?.removeFromScene()
         moray = nil
+        galleon?.removeFromScene()
+        galleon = nil
+        surface?.removeFromScene()
+        surface = nil
+        cannonHits.removeAll()
         cannonballs.forEach { $0.removeFromScene() }
         cannonballs.removeAll()
         mineFruit?.removeFromScene()
@@ -292,17 +315,31 @@ final class GameManager {
     /// and its fixtures, clearing whatever the last stage left (bombs included).
     /// The snake, fruit and lives are the callers' business.
     private func loadAdventureStage() {
+        // The sky blocks like the walls do; the storm draws it.
         walls?.removeFromScene()
-        let newWalls = Walls(positions: stage.walls, cellSize: cellSize, origin: origin)
+        let newWalls = Walls(positions: stage.walls.union(stage.sky), cellSize: cellSize, origin: origin, drawn: stage.walls)
         if let scene {
             newWalls.addToScene(scene)
         }
         walls = newWalls
 
+        surface?.removeFromScene()
+        surface = nil
+        if let waterline = stage.waterline {
+            let newSurface = StormSurface(waterline: waterline, columns: columns, rows: rows, cellSize: cellSize, origin: origin)
+            if let scene {
+                newSurface.addToScene(scene)
+            }
+            surface = newSurface
+        }
+
         kraken?.removeFromScene()
         kraken = nil
         moray?.removeFromScene()
         moray = nil
+        galleon?.removeFromScene()
+        galleon = nil
+        cannonHits.removeAll()
         bombs.forEach { $0.removeFromScene() }
         bombs.removeAll()
         cannonballs.forEach { $0.removeFromScene() }
@@ -322,6 +359,13 @@ final class GameManager {
                 newMoray.addToScene(scene)
             }
             moray = newMoray
+        case .galleon(let column):
+            let newGalleon = Galleon(column: column, waterline: stage.waterline ?? rows, columns: columns,
+                                     cellSize: cellSize, origin: origin)
+            if let scene {
+                newGalleon.addToScene(scene)
+            }
+            galleon = newGalleon
         }
 
         for position in stage.barrels {
@@ -346,6 +390,23 @@ final class GameManager {
     func beginNextStage() {
         guard mode == .adventure, isAwaitingNextLevel, stageIndex + 1 < AdventureStage.all.count else { return }
         stageIndex += 1
+        enterStage()
+        isAwaitingNextLevel = false
+    }
+
+    /// Zen mode's shortcut: while a new Adventure run is still waiting on the
+    /// chart, starts it at stage `index` instead, as if it began there (with just
+    /// that stage's starting mines).
+    func chooseStartingStage(_ index: Int) {
+        guard mode == .adventure, isWaitingToStart, AdventureStage.all.indices.contains(index), index != stageIndex else { return }
+        stageIndex = index
+        minesReady = 0
+        enterStage()
+    }
+
+    /// Lays out the current `stage` and puts the snake at its start, with the
+    /// fruit moved clear of it and lives refilled.
+    private func enterStage() {
         loadAdventureStage()
 
         snake.recenter(at: stage.snakeStart, direction: .right)
@@ -359,7 +420,6 @@ final class GameManager {
         isSnakeBlocked = false
         timeSinceLastMove = 0
         lastUpdateTime = 0
-        isAwaitingNextLevel = false
 
         onLivesChanged?(lives)
         reportMineSupply()
@@ -403,10 +463,19 @@ final class GameManager {
         occupiedBySnakeAndWalls + bombs.map(\.position)
     }
 
-    /// World-space position of the snake's head -- GameScene uses this to
-    /// drive Adventure mode's camera, and the kraken's eyes follow it.
+    /// World-space position of the snake's head -- the kraken's eyes follow it,
+    /// and so does Adventure mode's camera (`cameraFocus`).
     var headWorldPosition: CGPoint {
         GridGeometry.position(for: snake.head, cellSize: cellSize, origin: origin)
+    }
+
+    /// What Adventure's camera centers on (GameScene clamps it to the map): the
+    /// head, except that in a stage that reaches the surface it keeps to the top,
+    /// so the sky and the galleon are always in view. Such a stage's playable water
+    /// fits under them, so only its seabed is lost below.
+    var cameraFocus: CGPoint {
+        guard surface != nil else { return headWorldPosition }
+        return CGPoint(x: headWorldPosition.x, y: origin.y + CGFloat(rows) * cellSize)
     }
 
     func turn(to direction: Direction) {
@@ -441,6 +510,9 @@ final class GameManager {
         guard !isGameOver else { return }
         updateMoray(delta: delta)
         guard !isGameOver else { return }
+        updateGalleon(delta: delta)
+        guard !isGameOver else { return }
+        updateCannonHits(delta: delta)
 
         timeSinceLastMove += delta
         guard timeSinceLastMove >= moveInterval else { return }
@@ -758,22 +830,26 @@ final class GameManager {
             hurtPlayer(.blast)
             guard !isGameOver else { return }
         }
+        setOffBombs(in: vicinity)
+    }
 
-        // The mines it clears go off too, one after another just behind the
-        // sensor's own blast, so the chain reads in order.
-        let minesToRemove = bombs.filter { $0.kind == .mine && vicinity.contains($0.position) }
+    /// What a blast over `area` does to the bombs in it: mines go off too, one
+    /// after another just behind it so the chain reads in order; dormant sensors
+    /// arm; barrels detonate. Callers check `isGameOver`.
+    private func setOffBombs(in area: [GridPoint]) {
+        let minesToRemove = bombs.filter { $0.kind == .mine && area.contains($0.position) }
         if let scene {
             for (index, mine) in minesToRemove.enumerated() {
                 mine.explode(in: scene, delay: 0.12 + 0.08 * Double(index))
             }
         }
-        bombs.removeAll { $0.kind == .mine && vicinity.contains($0.position) }
+        bombs.removeAll { $0.kind == .mine && area.contains($0.position) }
 
-        for other in bombs where other.kind == .sensor && vicinity.contains(other.position) {
+        for other in bombs where other.kind == .sensor && area.contains(other.position) {
             other.arm()
         }
 
-        let barrelsToExplode = bombs.filter { $0.kind == .barrel && !$0.isExpired && vicinity.contains($0.position) }
+        let barrelsToExplode = bombs.filter { $0.kind == .barrel && !$0.isExpired && area.contains($0.position) }
         for barrel in barrelsToExplode {
             detonate(barrel)
             guard !isGameOver else { return }
@@ -783,7 +859,7 @@ final class GameManager {
     /// A barrel going off, whether a sensor's blast set it off or its own fuse
     /// did after it was pushed onto a bomb: beams down its whole row and column
     /// (`Bomb.explodeBarrel`). They hurt the boss if they cross it (the kraken's
-    /// lair, the moray's head), and the snake if its head is on that row or column (unless
+    /// lair, the moray's head, the galleon's hull), and the snake if its head is on that row or column (unless
     /// bomb-eater is active; the beams passing through its body are harmless).
     /// The bomb it was primed on goes off with it. Callers check `isGameOver`.
     private func detonate(_ barrel: Bomb) {
@@ -832,10 +908,21 @@ final class GameManager {
     /// as a wall, and bumping it costs a life like one. Fruit it touches on the
     /// way counts as eaten by the snake. A barrel pushed onto a bomb primes on
     /// top of it, its fuse starting once its move is over.
+    ///
+    /// A cannonball that rolls up into the galleon's hull holes it instead: see
+    /// `fire(_:along:heading:)`. That works point blank too, from right under it.
+    /// One that rolls into the moray, anywhere along its body, hurts it as it
+    /// arrives, and comes to rest against it, ready to be pushed again. That one
+    /// needs a run-up: a ball already touching the moray just won't move.
     private func push(_ object: Pushable, awayFrom head: GridPoint) -> Bool {
         guard object.isSolid else { return false }
         let heading = GameManager.step(from: head, to: object.position)
         let path = route(of: object, heading: heading)
+        let beyond = GridPoint(x: path.destination.x + heading.dx, y: path.destination.y + heading.dy)
+        if let ball = object as? Cannonball, let galleon, galleon.cells.contains(beyond) {
+            fire(ball, along: path, heading: heading)
+            return true
+        }
         guard path.cells > 0 else { return false }
 
         let duration = object.move(to: path.destination, cells: path.cells)
@@ -843,6 +930,11 @@ final class GameManager {
         onJolt?(.push)
         if let trigger = path.landedOn, let barrel = object as? Bomb {
             barrel.prime(on: trigger, after: duration)
+        }
+        if object is Cannonball, let moray, moray.cells.contains(beyond) {
+            let stop = GridGeometry.position(for: path.destination, cellSize: cellSize, origin: origin)
+            let contact = CGPoint(x: stop.x + CGFloat(heading.dx) * cellSize / 2, y: stop.y + CGFloat(heading.dy) * cellSize / 2)
+            cannonHits.append((duration, contact, moray))
         }
         return true
     }
@@ -854,7 +946,7 @@ final class GameManager {
     /// an open row would never end. Fruit doesn't stop it. A bomb ahead stops it in
     /// front, unless it `landsOnBombs` (a barrel), which stops it on top
     /// (`landedOn`) -- not on one another barrel is already primed on, though.
-    private func route(of object: Pushable, heading: (dx: Int, dy: Int)) -> (destination: GridPoint, cells: Int, touched: [GridPoint], landedOn: Bomb?) {
+    private func route(of object: Pushable, heading: (dx: Int, dy: Int)) -> Route {
         let limit = object.pushStyle == .step ? 1 : max(columns, rows)
         var cell = object.position
         var touched: [GridPoint] = []
@@ -873,6 +965,49 @@ final class GameManager {
             touched.append(next)
         }
         return (cell, touched.count, touched, nil)
+    }
+
+    /// Where a push takes something (`route(of:heading:)`): where it ends up, how
+    /// many cells that is, every cell it touches on the way, and the bomb it lands
+    /// on, if it's a barrel that did.
+    private typealias Route = (destination: GridPoint, cells: Int, touched: [GridPoint], landedOn: Bomb?)
+
+    /// A cannonball pushed up into the galleon's hull: it rolls up, smashes in and
+    /// is gone, and the hit lands as it gets there (`updateCannonHits`). Fruit it
+    /// passes still counts.
+    private func fire(_ ball: Cannonball, along path: Route, heading: (dx: Int, dy: Int)) {
+        let impact = ball.smash(rollingTo: path.destination, cells: path.cells, heading: heading)
+        cannonballs.removeAll { $0 === ball }
+        collectFruit(along: path.touched)
+        onJolt?(.push)
+        let top = GridGeometry.position(for: path.destination, cellSize: cellSize, origin: origin)
+        if let galleon {
+            cannonHits.append((impact, CGPoint(x: top.x, y: top.y + cellSize / 2), galleon))
+        }
+    }
+
+    /// Counts down the cannonballs on their way into a boss; each one that gets
+    /// there costs it a life (if it isn't still recovering from the last): a hole
+    /// blown in the galleon's hull, a heavy thud into the moray.
+    private func updateCannonHits(delta: TimeInterval) {
+        guard !cannonHits.isEmpty else { return }
+        for index in cannonHits.indices {
+            cannonHits[index].timeLeft -= delta
+        }
+        let arrived = cannonHits.filter { $0.timeLeft <= 0 }
+        cannonHits.removeAll { $0.timeLeft <= 0 }
+        for hit in arrived {
+            if let scene {
+                if hit.target is Galleon {
+                    BoardEffects.explosion(at: hit.point, color: SKColor(red: 1, green: 0.6, blue: 0.3, alpha: 1),
+                                           cellSize: cellSize, size: 1.4, in: scene)
+                } else {
+                    BoardEffects.impact(at: hit.point, color: SKColor(named: "Foam") ?? .white, cellSize: cellSize, in: scene)
+                }
+            }
+            onJolt?(.explosion(hit.point))
+            strike(hit.target)
+        }
     }
 
     /// Fruit a pushed object touched on its way (every cell it passed through or
@@ -944,16 +1079,21 @@ final class GameManager {
     /// blast. Bomb-eater doesn't protect against it: tentacles aren't bombs.
     private func updateKraken(delta: TimeInterval) {
         guard let kraken else { return }
-        // Aim new strikes where the head will be when their tentacle comes up, if
-        // it keeps going: around its current cell, a snake swimming straight would
-        // always outrun the warning. (Off the map is fine; the kraken clamps it.)
-        let lead = isSnakeBlocked ? 0 : Int(TentacleStrike.warningDuration / moveInterval)
-        let heading = snake.direction.vector
-        let aim = GridPoint(x: snake.head.x + heading.dx * lead, y: snake.head.y + heading.dy * lead)
-        kraken.update(delta: delta, aim: aim)
+        // Off the map is fine; the kraken clamps it.
+        kraken.update(delta: delta, aim: aimAhead(by: TentacleStrike.warningDuration))
         if kraken.isStriking(snake.head) {
             hurtPlayer(.tentacle)
         }
+    }
+
+    /// Where the head will be in `seconds` if it keeps going straight, or where it
+    /// is while it's stopped against something: an attack with a warning, aimed at
+    /// its current cell, would always land behind a snake swimming straight. It may
+    /// be off the map; callers clamp it or check.
+    private func aimAhead(by seconds: TimeInterval) -> GridPoint {
+        let lead = isSnakeBlocked ? 0 : Int(seconds / moveInterval)
+        let heading = snake.direction.vector
+        return GridPoint(x: snake.head.x + heading.dx * lead, y: snake.head.y + heading.dy * lead)
     }
 
     /// Lets the moray take its next step, if one's due. Into the snake, that's a
@@ -981,6 +1121,63 @@ final class GameManager {
         strike(moray)
     }
 
+    /// Lets the galleon sail and fire, by real time like the kraken's strikes, and
+    /// resolves whatever of its shot has landed.
+    private func updateGalleon(delta: TimeInterval) {
+        guard let galleon else { return }
+        let landed = galleon.update(delta: delta, chasing: snake.head.x,
+                                    aim: aimAhead(by: CannonShot.warningDuration), canLand: canCannonLand)
+        for shot in landed {
+            resolveCannonShot(shot)
+        }
+    }
+
+    /// A cannon shot landing: the head anywhere in its 3x3 patch costs a life (and
+    /// bomb-eater doesn't help: it isn't a bomb), and bombs there go off as they
+    /// would in a sensor's blast. Then the ball comes to rest where it fell, a
+    /// cannonball like any other, if the cell's clear and there aren't already
+    /// plenty lying around.
+    private func resolveCannonShot(_ shot: CannonShot) {
+        let cell = shot.target
+        onJolt?(.explosion(GridGeometry.position(for: cell, cellSize: cellSize, origin: origin)))
+        if shot.covers(snake.head) {
+            hurtPlayer(.blast)
+        }
+        if !isGameOver {
+            setOffBombs(in: [cell] + GameManager.vicinity(of: cell, columns: columns, rows: rows))
+        }
+
+        let keepsBall = !isGameOver && cannonballs.count < maxLooseCannonballs && isClearForCannonball(cell)
+        shot.settle(keepingBall: keepsBall)
+        guard keepsBall else { return }
+        let ball = Cannonball(position: cell, cellSize: cellSize, origin: origin)
+        if let scene {
+            ball.addToScene(scene)
+        }
+        cannonballs.append(ball)
+    }
+
+    /// Where the galleon's shot may land: open water with nothing solid over it all
+    /// the way up, since a ball sinks straight down from the surface. So rock, a
+    /// barrel or another cannonball overhead is shelter.
+    private func canCannonLand(_ cell: GridPoint) -> Bool {
+        guard let waterline = stage.waterline, cell.x >= 0, cell.x < columns, cell.y >= 0, cell.y < waterline else {
+            return false
+        }
+        let solid = Set(pushables.filter(\.isSolid).map(\.position))
+        return (cell.y..<waterline).allSatisfy { y in
+            let point = GridPoint(x: cell.x, y: y)
+            return !isWall(point) && !solid.contains(point)
+        }
+    }
+
+    /// Whether a fallen cannonball can come to rest in `cell`: nothing else there.
+    private func isClearForCannonball(_ cell: GridPoint) -> Bool {
+        !isBarrier(cell) && !snake.segments.contains(cell)
+            && cell != food.position && cell != mineFruit?.position && cell != powerUp?.position
+            && !bombs.contains { $0.position == cell && !$0.isExpired }
+    }
+
     /// Where the moray may go: not into walls or anything solid and pushable, but
     /// yes into the snake (what it's after) and into mines (it can't see them).
     private func isOpenForMoray(_ cell: GridPoint) -> Bool {
@@ -995,11 +1192,15 @@ final class GameManager {
     ///   for `hitGraceDuration`.
     /// - The last life: the run stops at once (`isGameOver`), but `onGameOver`, and
     ///   so the overlay, waits for the snake's death animation to finish.
+    /// - In zen mode it plays out like any hit that isn't the last, but no life is
+    ///   lost, so the run never ends.
     private func hurtPlayer(_ hurt: Hurt) {
         guard !isGameOver, hitGraceRemaining <= 0 else { return }
-        lives -= 1
-        if maxLives > 1 {
-            onLivesChanged?(lives)
+        if !isZen {
+            lives -= 1
+            if maxLives > 1 {
+                onLivesChanged?(lives)
+            }
         }
         showImpact(hurt)
 
@@ -1042,8 +1243,9 @@ final class GameManager {
         }
     }
 
-    /// Cells the snake stops against instead of entering: walls, the boss (the
-    /// kraken's lair, the moray's body) and anything solid and pushable (which the tick then tries to shove out of the
+    /// Cells the snake stops against instead of entering: walls (and the sky, in a
+    /// stage that reaches the surface), the boss (the kraken's lair, the moray's
+    /// body, the galleon's hull) and anything solid and pushable (which the tick then tries to shove out of the
     /// way). Its own body is the snake's business; see `Snake.advance`.
     private func isBarrier(_ point: GridPoint) -> Bool {
         (walls?.contains(point) ?? false)
@@ -1051,11 +1253,20 @@ final class GameManager {
             || pushables.contains { $0.isSolid && $0.position == point }
     }
 
-    /// Poses anything animated by the clock rather than by ticks (the kraken), for
-    /// `time` (`AmbientClock` seconds). Called every frame, including after a game
-    /// over, so the boss keeps moving behind the overlay.
+    /// Poses anything animated by the clock rather than by ticks (the kraken, the
+    /// galleon, the storm), for `time` (`AmbientClock` seconds). Called every
+    /// frame, including after a game over, so the boss keeps moving behind the
+    /// overlay.
     func animate(time: Double) {
         kraken?.animate(time: time, focus: headWorldPosition)
+        galleon?.animate(time: time)
+        surface?.animate(time: time, focus: headWorldPosition)
+    }
+
+    /// How bright the storm's lightning is at `time` (`AmbientClock` seconds), so
+    /// the water can be lit by it too: 0 in any stage without one.
+    func lightning(at time: Double) -> Double {
+        surface?.lightning(at: time) ?? 0
     }
 
     /// Whether `point` lies on `center`'s row or column -- the cross a

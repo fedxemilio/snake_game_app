@@ -546,6 +546,281 @@ enum SpriteArt {
         }
     }
 
+    // MARK: Galleon and the storm
+
+    /// Where the galleon's texture sits on its hull: its anchor point, putting the
+    /// sprite's position at the middle of the hull, on the waterline.
+    static let galleonAnchor = CGPoint(x: 6.2 / 12.6, y: 1.6 / 9.4)
+    /// The galleon's gun ports, in cells from the middle of the hull (facing right),
+    /// and how high above the waterline they are.
+    static let galleonGunPorts: [CGFloat] = [-2, -1, 0, 1, 2]
+    static let galleonGunPortHeight: CGFloat = 0.85
+
+    /// The galleon, side on, facing right: a black, high-sterned hull with a row of
+    /// lantern-lit gun ports, three masts of ragged, ghostly sails, a cold rim of
+    /// lightning-light around it, and the part below the waterline sunk in murk.
+    /// About 12 cells long and 9 tall; see `galleonAnchor` for where it sits.
+    static func galleon(cellSize c: CGFloat) -> SKTexture {
+        let size = CGSize(width: 12.6 * c, height: 9.4 * c)
+        return cached("galleon-\(c)", size: size) { ctx in
+            let waterline = size.height - 1.6 * c
+            // `x` cells from the stern end, `h` cells above the waterline.
+            func p(_ x: CGFloat, _ h: CGFloat) -> CGPoint {
+                CGPoint(x: (0.3 + x) * c, y: waterline - h * c)
+            }
+            var seed: UInt32 = 4242
+            func next() -> CGFloat {
+                seed = seed &* 1_103_515_245 &+ 12345
+                return CGFloat((seed >> 16) & 0x7FFF) / CGFloat(0x7FFF)
+            }
+            let timber = UIColor(red: 0.14, green: 0.11, blue: 0.1, alpha: 1)
+            let gold = color("PaleGold")
+
+            // Rigging, behind everything.
+            ctx.setStrokeColor(color("Foam").withAlphaComponent(0.28).cgColor)
+            ctx.setLineWidth(max(0.6, c * 0.04))
+            for (from, to) in [(p(5.9, 7.2), p(12.0, 3.1)), (p(5.9, 7.2), p(1.2, 2.5)),
+                               (p(8.6, 6.6), p(12.0, 3.1)), (p(3.0, 6.3), p(1.0, 2.5))] {
+                ctx.move(to: from)
+                ctx.addLine(to: to)
+            }
+            ctx.strokePath()
+
+            // Sails: pale, torn along the bottom and holed, hanging from their yards.
+            let sails: [(x: CGFloat, top: CGFloat, half: CGFloat, bottom: CGFloat)] = [
+                (3.0, 5.8, 0.9, 4.5), (3.0, 4.3, 1.15, 2.9),
+                (5.9, 6.7, 1.25, 5.1), (5.9, 4.9, 1.6, 3.0),
+                (8.6, 6.1, 1.0, 4.7), (8.6, 4.5, 1.3, 3.0),
+            ]
+            for sail in sails {
+                let path = CGMutablePath()
+                path.move(to: p(sail.x - sail.half, sail.top))
+                path.addLine(to: p(sail.x + sail.half, sail.top))
+                path.addQuadCurve(to: p(sail.x + sail.half * 0.9, sail.bottom + 0.2),
+                                  control: p(sail.x + sail.half * 1.12, (sail.top + sail.bottom) / 2))
+                let teeth = 6
+                for tooth in 1..<teeth {
+                    let along = CGFloat(tooth) / CGFloat(teeth)
+                    let x = sail.x + sail.half * 0.9 * (1 - 2 * along)
+                    let drop = tooth.isMultiple(of: 2) ? 0.25 * next() : -0.1 - 0.3 * next()
+                    path.addLine(to: p(x, sail.bottom + 0.1 + drop))
+                }
+                path.addLine(to: p(sail.x - sail.half * 0.9, sail.bottom + 0.15))
+                path.addQuadCurve(to: p(sail.x - sail.half, sail.top),
+                                  control: p(sail.x - sail.half * 1.1, (sail.top + sail.bottom) / 2))
+                path.closeSubpath()
+                glow(path, in: ctx, color: UIColor(red: 0.55, green: 0.85, blue: 0.8, alpha: 0.18), blur: c * 0.4)
+                fillLinear(path, in: ctx,
+                           colors: [UIColor(red: 0.8, green: 0.86, blue: 0.84, alpha: 0.6),
+                                    UIColor(red: 0.5, green: 0.6, blue: 0.6, alpha: 0.35)],
+                           from: p(sail.x, sail.top), to: p(sail.x, sail.bottom))
+                // A couple of holes torn through.
+                ctx.saveGState()
+                ctx.setBlendMode(.clear)
+                for _ in 0..<2 {
+                    let width = c * (0.18 + 0.25 * next())
+                    let center = p(sail.x + sail.half * (1.2 * next() - 0.6),
+                                   sail.bottom + (sail.top - sail.bottom) * (0.25 + 0.5 * next()))
+                    ctx.fillEllipse(in: CGRect(x: center.x - width / 2, y: center.y - width * 0.35,
+                                               width: width, height: width * 0.7))
+                }
+                ctx.restoreGState()
+            }
+
+            // Masts, yards, bowsprit and a tattered pennant.
+            ctx.setStrokeColor(timber.cgColor)
+            ctx.setLineCap(.round)
+            ctx.setLineWidth(c * 0.13)
+            for (x, top) in [(3.0, 6.3), (5.9, 7.2), (8.6, 6.6)] as [(CGFloat, CGFloat)] {
+                ctx.move(to: p(x, 1.8))
+                ctx.addLine(to: p(x, top))
+            }
+            ctx.move(to: p(10.4, 2.2))
+            ctx.addLine(to: p(12.0, 3.1))
+            ctx.strokePath()
+            ctx.setLineWidth(c * 0.08)
+            for sail in sails {
+                ctx.move(to: p(sail.x - sail.half * 1.05, sail.top))
+                ctx.addLine(to: p(sail.x + sail.half * 1.05, sail.top))
+            }
+            ctx.strokePath()
+            let pennant = CGMutablePath()
+            pennant.move(to: p(5.9, 7.25))
+            pennant.addLine(to: p(7.2, 7.0))
+            pennant.addLine(to: p(6.7, 6.95))
+            pennant.addLine(to: p(7.0, 6.85))
+            pennant.addLine(to: p(5.9, 6.8))
+            pennant.closeSubpath()
+            ctx.setFillColor(UIColor(red: 0.5, green: 0.1, blue: 0.12, alpha: 0.9).cgColor)
+            ctx.addPath(pennant)
+            ctx.fillPath()
+
+            // The hull: a raised stern castle on the left, the deck, a forecastle
+            // rising to the bow, and the keel below the waterline.
+            let hull = CGMutablePath()
+            hull.move(to: p(1.2, 2.5))
+            hull.addLine(to: p(3.5, 2.5))
+            hull.addLine(to: p(3.7, 1.8))
+            hull.addLine(to: p(9.2, 1.8))
+            hull.addQuadCurve(to: p(10.6, 2.3), control: p(10.0, 1.8))
+            hull.addQuadCurve(to: p(9.6, -0.6), control: p(10.7, 0.6))
+            hull.addQuadCurve(to: p(2.8, -0.9), control: p(6.2, -1.1))
+            hull.addQuadCurve(to: p(1.2, 2.5), control: p(1.0, 0.0))
+            hull.closeSubpath()
+            glow(hull, in: ctx, color: UIColor(red: 0.62, green: 0.78, blue: 0.85, alpha: 0.4), blur: c * 0.35)
+            fillLinear(hull, in: ctx,
+                       colors: [UIColor(red: 0.25, green: 0.2, blue: 0.16, alpha: 1),
+                                UIColor(red: 0.05, green: 0.045, blue: 0.05, alpha: 1)],
+                       from: p(6, 2.5), to: p(6, -0.9))
+
+            ctx.saveGState()
+            ctx.addPath(hull)
+            ctx.clip()
+            // A lighter wale along the side, and the seams of the planking.
+            ctx.setFillColor(UIColor(red: 0.36, green: 0.27, blue: 0.18, alpha: 1).cgColor)
+            ctx.fill(CGRect(x: 0, y: p(0, 1.35).y, width: size.width, height: 0.2 * c))
+            ctx.setStrokeColor(UIColor.black.withAlphaComponent(0.5).cgColor)
+            ctx.setLineWidth(max(0.6, c * 0.035))
+            for h: CGFloat in [2.1, 0.5, 0.0, -0.45] {
+                ctx.move(to: CGPoint(x: 0, y: p(0, h).y))
+                ctx.addLine(to: CGPoint(x: size.width, y: p(0, h).y))
+            }
+            ctx.strokePath()
+            // Below the waterline it's sunk in murk.
+            ctx.setFillColor(UIColor(red: 0.04, green: 0.12, blue: 0.15, alpha: 0.55).cgColor)
+            ctx.fill(CGRect(x: 0, y: waterline, width: size.width, height: size.height - waterline))
+            ctx.restoreGState()
+
+            // A pale rail along the deck, lit by the storm.
+            let rail = CGMutablePath()
+            rail.move(to: p(1.2, 2.5))
+            rail.addLine(to: p(3.5, 2.5))
+            rail.addLine(to: p(3.7, 1.8))
+            rail.addLine(to: p(9.2, 1.8))
+            rail.addQuadCurve(to: p(10.6, 2.3), control: p(10.0, 1.8))
+            ctx.setStrokeColor(color("Foam").withAlphaComponent(0.45).cgColor)
+            ctx.setLineWidth(max(0.8, c * 0.05))
+            ctx.addPath(rail)
+            ctx.strokePath()
+
+            // Lantern light: the gun ports, the stern windows, the stern lantern.
+            let ports = galleonGunPorts.map { CGRect(x: p(5.9 + $0, 0).x - 0.15 * c, y: p(0, galleonGunPortHeight).y - 0.15 * c,
+                                                    width: 0.3 * c, height: 0.3 * c) }
+            let windows = [CGRect(x: p(1.7, 0).x, y: p(0, 2.05).y, width: 0.24 * c, height: 0.24 * c),
+                           CGRect(x: p(2.5, 0).x, y: p(0, 2.05).y, width: 0.24 * c, height: 0.24 * c)]
+            for light in ports + windows {
+                let shape = UIBezierPath(roundedRect: light, cornerRadius: c * 0.04).cgPath
+                glow(shape, in: ctx, color: gold.withAlphaComponent(0.8), blur: c * 0.3)
+                ctx.setFillColor(UIColor(red: 1, green: 0.93, blue: 0.7, alpha: 1).cgColor)
+                ctx.fill(light.insetBy(dx: c * 0.05, dy: c * 0.05))
+            }
+            ctx.setStrokeColor(timber.cgColor)
+            ctx.setLineWidth(c * 0.07)
+            ctx.move(to: p(1.3, 2.5))
+            ctx.addLine(to: p(0.9, 3.0))
+            ctx.strokePath()
+            let lantern = CGPath(ellipseIn: square(p(0.9, 3.1), c * 0.26), transform: nil)
+            glow(lantern, in: ctx, color: gold, blur: c * 0.5)
+            circle(p(0.9, 3.1), radius: c * 0.08, in: ctx, color: .white)
+        }
+    }
+
+    /// The storm sky over the water, `height` points tall: near black overhead,
+    /// paling to a grey horizon at the waterline. Two points wide, to be stretched.
+    static func stormSky(height: CGFloat) -> SKTexture {
+        cached("storm-sky-\(height)", size: CGSize(width: 2, height: height)) { ctx in
+            guard let gradient = CGGradient(
+                colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                colors: [UIColor(red: 0.02, green: 0.03, blue: 0.05, alpha: 1),
+                         UIColor(red: 0.07, green: 0.1, blue: 0.14, alpha: 1),
+                         UIColor(red: 0.15, green: 0.2, blue: 0.25, alpha: 1)].map(\.cgColor) as CFArray,
+                locations: [0, 0.7, 1]
+            ) else { return }
+            ctx.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: 0, y: height), options: [])
+        }
+    }
+
+    /// The surface seen side on: a strip two waves long (`cellSize` x 4), just a
+    /// rolling crest of foam, so whatever's behind (sky, water, the galleon's hull)
+    /// shows through. Tiled across the map and scrolled to make the waves roll.
+    static func surfaceWaves(cellSize c: CGFloat) -> SKTexture {
+        let size = CGSize(width: c * 4, height: c * 1.4)
+        return cached("waves-\(c)", size: size) { ctx in
+            let crest = CGMutablePath()
+            let steps = 48
+            for step in 0...steps {
+                let x = size.width * CGFloat(step) / CGFloat(steps)
+                // Sharp crests and broad troughs, like wind-driven waves.
+                let phase = 2 * CGFloat.pi * x / (c * 2)
+                let y = size.height / 2 - c * 0.16 * (pow((1 + sin(phase)) / 2, 2.5) - 0.3)
+                if step == 0 {
+                    crest.move(to: CGPoint(x: x, y: y))
+                } else {
+                    crest.addLine(to: CGPoint(x: x, y: y))
+                }
+            }
+            ctx.saveGState()
+            ctx.setShadow(offset: .zero, blur: c * 0.15, color: color("Foam").withAlphaComponent(0.7).cgColor)
+            ctx.setStrokeColor(color("Foam").withAlphaComponent(0.75).cgColor)
+            ctx.setLineWidth(max(1, c * 0.07))
+            ctx.addPath(crest)
+            ctx.strokePath()
+            ctx.restoreGState()
+        }
+    }
+
+    /// A fork of lightning, about 6 cells tall: a white core in a cold blue glow.
+    /// A couple of `variant`s, so strikes don't all look alike.
+    static func lightningBolt(cellSize c: CGFloat, variant: Int) -> SKTexture {
+        let size = CGSize(width: c * 2.6, height: c * 6.4)
+        return cached("bolt-\(variant)-\(c)", size: size) { ctx in
+            var seed = UInt32(variant * 977 + 3)
+            func next() -> CGFloat {
+                seed = seed &* 1_103_515_245 &+ 12345
+                return CGFloat((seed >> 16) & 0x7FFF) / CGFloat(0x7FFF)
+            }
+            let bolt = CGMutablePath()
+            var point = CGPoint(x: size.width / 2, y: 0)
+            bolt.move(to: point)
+            var fork: CGPoint?
+            for step in 1...9 {
+                point = CGPoint(x: size.width / 2 + c * 0.55 * (2 * next() - 1),
+                                y: size.height * CGFloat(step) / 9)
+                bolt.addLine(to: point)
+                if step == 4 { fork = point }
+            }
+            if let fork {
+                bolt.move(to: fork)
+                bolt.addLine(to: CGPoint(x: fork.x + c * 0.7, y: fork.y + c * 0.9))
+                bolt.addLine(to: CGPoint(x: fork.x + c * 0.95, y: fork.y + c * 1.8))
+            }
+            ctx.setLineJoin(.round)
+            ctx.saveGState()
+            ctx.setShadow(offset: .zero, blur: c * 0.45, color: UIColor(red: 0.6, green: 0.75, blue: 1, alpha: 1).cgColor)
+            ctx.setStrokeColor(UIColor(red: 0.7, green: 0.82, blue: 1, alpha: 0.9).cgColor)
+            ctx.setLineWidth(c * 0.16)
+            ctx.addPath(bolt)
+            ctx.strokePath()
+            ctx.restoreGState()
+            ctx.setStrokeColor(UIColor.white.cgColor)
+            ctx.setLineWidth(c * 0.06)
+            ctx.addPath(bolt)
+            ctx.strokePath()
+        }
+    }
+
+    /// A streak of rain, for the storm's emitter.
+    static func rainStreak() -> SKTexture {
+        cached("rain", size: CGSize(width: 2, height: 14)) { ctx in
+            guard let gradient = CGGradient(
+                colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                colors: [UIColor.white.withAlphaComponent(0), UIColor.white.withAlphaComponent(0.85)].map(\.cgColor) as CFArray,
+                locations: nil
+            ) else { return }
+            ctx.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: 0, y: 14), options: [])
+        }
+    }
+
     // MARK: Effects
 
     /// A soft white glow fading to nothing, two cells across: tinted and blended
@@ -814,7 +1089,7 @@ enum SpriteArt {
     }
 }
 
-private extension UIColor {
+extension UIColor {
     /// A blend toward `other` by `fraction` (0 = self, 1 = other).
     func mixed(with other: UIColor, by fraction: CGFloat) -> UIColor {
         var (r1, g1, b1, a1): (CGFloat, CGFloat, CGFloat, CGFloat) = (0, 0, 0, 0)
@@ -826,7 +1101,7 @@ private extension UIColor {
     }
 
     /// Distinguishes cache entries by color.
-    var hashKey: String {
+    fileprivate var hashKey: String {
         var (r, g, b, a): (CGFloat, CGFloat, CGFloat, CGFloat) = (0, 0, 0, 0)
         getRed(&r, green: &g, blue: &b, alpha: &a)
         return String(format: "%.3f-%.3f-%.3f-%.3f", r, g, b, a)

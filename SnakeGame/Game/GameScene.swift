@@ -2,6 +2,8 @@ import SpriteKit
 
 final class GameScene: SKScene {
     private let mode: GameMode
+    /// Zen mode (for testing): nothing costs a life. See `GameManager.hurtPlayer`.
+    private let isZen: Bool
     private let columns: Int
     private let rows: Int
 
@@ -86,8 +88,9 @@ final class GameScene: SKScene {
     }
     private var mineSupply: GameManager.MineSupply?
 
-    init(mode: GameMode) {
+    init(mode: GameMode, isZen: Bool = false) {
         self.mode = mode
+        self.isZen = isZen
         switch mode {
         case .freePlay:
             columns = 16
@@ -132,7 +135,7 @@ final class GameScene: SKScene {
             setUpCamera()
         }
 
-        gameManager = GameManager(scene: self, mode: mode, columns: columns, rows: rows, cellSize: cellSize, origin: origin)
+        gameManager = GameManager(scene: self, mode: mode, isZen: isZen, columns: columns, rows: rows, cellSize: cellSize, origin: origin)
         gameManager.onScoreChanged = { [weak self] score in
             self?.onScoreChanged?(score)
         }
@@ -197,6 +200,12 @@ final class GameScene: SKScene {
     /// Adventure run.
     func releaseStart() {
         gameManager.releaseStart()
+    }
+
+    /// Zen mode: called when a stop is picked on the voyage chart at the start of an
+    /// Adventure run, to start there instead.
+    func chooseStartingStage(_ index: Int) {
+        gameManager.chooseStartingStage(index)
     }
 
     /// Called when the player sets off from the voyage chart after a stage is
@@ -266,7 +275,7 @@ final class GameScene: SKScene {
         snow.advanceSimulationTime(24)
     }
 
-    /// Adventure mode only: a camera the snake's head drives, clamped so
+    /// Adventure mode only: a camera that follows the snake (`GameManager.cameraFocus`), clamped so
     /// the viewport never shows past the map's edges.
     private func setUpCamera() {
         let camera = SKCameraNode()
@@ -278,16 +287,16 @@ final class GameScene: SKScene {
     private func updateCamera(delta: TimeInterval = 0) {
         guard let cameraNode else { return }
 
-        let headPosition = gameManager.headWorldPosition
+        let focus = gameManager.cameraFocus
         let halfWidth = size.width / 2
         let halfHeight = size.height / 2
 
         let x = worldSize.width <= size.width
             ? worldSize.width / 2
-            : min(max(headPosition.x, halfWidth), worldSize.width - halfWidth)
+            : min(max(focus.x, halfWidth), worldSize.width - halfWidth)
         let y = worldSize.height <= size.height
             ? worldSize.height / 2
-            : min(max(headPosition.y, halfHeight), worldSize.height - halfHeight)
+            : min(max(focus.y, halfHeight), worldSize.height - halfHeight)
 
         let shake = shakeOffset(delta: delta)
         cameraNode.position = CGPoint(x: x + shake.x, y: y + shake.y)
@@ -388,7 +397,7 @@ final class GameScene: SKScene {
         }
         let time = AmbientClock.seconds(at: Date())
         if !reduceMotion {
-            water.update(time: time)
+            water.update(time: time, flash: gameManager.lightning(at: time))
         }
         gameManager.animate(time: time)
     }

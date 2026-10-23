@@ -4,7 +4,7 @@ import SwiftUI
 /// Which leg of Adventure's ascent the voyage chart shows: the snake's marker
 /// swims from `from` (a stage index into `AdventureStage.all`, or nil for the
 /// abyss below the first) up to `to` (a stage index, or `AdventureStage.all.count`
-/// for the surface beyond the last, which isn't open yet).
+/// for the surface itself, above the last, where the ascent ends).
 struct Voyage: Equatable {
     let from: Int?
     let to: Int
@@ -13,11 +13,12 @@ struct Voyage: Equatable {
     var isFinal: Bool { to >= AdventureStage.all.count }
 }
 
-/// Adventure's map: a chart of the ascent from the abyss toward the stormy
-/// surface. A dotted route winds up through each stage's stop (its boss's own
-/// sprite, its depth); the stretch already swum glows, cleared stops are ticked,
-/// and a little glowing serpent swims up to the next one. Shown when an Adventure
-/// run starts and between stages.
+/// Adventure's map: a chart of the ascent from the abyss to the stormy surface. A
+/// dotted route winds up through each stage's stop (its boss's own sprite, its
+/// depth) and on up to the surface; the stretch already swum glows, cleared stops
+/// are ticked, and a little glowing serpent swims up to the next one. Shown when
+/// an Adventure run starts, between stages, and at the end, when the last leg
+/// takes it up through the surface.
 struct VoyageChart: View {
     let voyage: Voyage
     /// Into the stage it's arrived at (BEGIN, or SWIM ON after a stage).
@@ -26,6 +27,9 @@ struct VoyageChart: View {
     let onRestart: () -> Void
     /// Only past the last stage: back to the menu.
     let onSurface: () -> Void
+    /// Zen mode, at the start of a run: a stop was tapped, to start there. Nil when
+    /// stops can't be picked.
+    var onPickStage: ((Int) -> Void)? = nil
 
     /// How far the marker has swum this leg, 0 (at `from`) ... 1 (at `to`).
     @State private var leg: CGFloat = 0
@@ -34,23 +38,25 @@ struct VoyageChart: View {
 
     private struct Stop {
         let name: String
-        let bossName: String?
+        let bossName: String
         let depth: Int
         let hint: String
-        let icon: Image?
+        let icon: Image
     }
 
     private static let stops: [Stop] = AdventureStage.all.enumerated().map { index, stage in
         Stop(name: stage.name, bossName: stage.bossName, depth: stage.depth, hint: stage.hint, icon: icon(forStage: index))
-    } + [Stop(name: "The Surface", bossName: nil, depth: 0, hint: "Not yet. The storm waits.", icon: nil)]
+    }
 
-    /// Waypoints, as fractions of the chart: the abyss where a run begins, then one
-    /// per stop, winding up toward the surface. One more stop needs one more point.
+    /// Waypoints, as fractions of the chart: the abyss where a run begins, one per
+    /// stop, winding up, and last the surface (on `SurfaceLine`). One more stop
+    /// needs one more point.
     private static let waypoints: [CGPoint] = [
         CGPoint(x: 0.16, y: 0.84),
         CGPoint(x: 0.32, y: 0.71),
         CGPoint(x: 0.68, y: 0.51),
         CGPoint(x: 0.38, y: 0.29),
+        CGPoint(x: 0.5, y: 0.2),
     ]
 
     private static let teal = Color("BioluminescentGlow")
@@ -61,7 +67,7 @@ struct VoyageChart: View {
             let size = proxy.size
             let route = Route(size: size)
             let start = route.fraction(atWaypoint: voyage.from.map { $0 + 1 } ?? 0)
-            let end = route.fraction(atWaypoint: min(voyage.to, Self.stops.count - 1) + 1)
+            let end = route.fraction(atWaypoint: voyage.to + 1)
             let traveled = start + (end - start) * leg
 
             ZStack {
@@ -89,6 +95,11 @@ struct VoyageChart: View {
                         FloatingTitle.Line(text: "THE", fontSize: 22, tracking: 14, centerY: 0.26),
                         FloatingTitle.Line(text: "ASCENT", fontSize: 46, tracking: 6, centerY: 0.66),
                     ], height: 110)
+                    if let caption {
+                        Text(caption)
+                            .font(.custom("Work Sans", size: 15))
+                            .foregroundStyle(Self.gold.opacity(0.9))
+                    }
                     Spacer()
                     buttons
                         .padding(.bottom, 24)
@@ -111,12 +122,20 @@ struct VoyageChart: View {
         }
     }
 
+    /// A line under the title, when there's something to say.
+    private var caption: String? {
+        if voyage.isFinal {
+            return "You've reached the surface"
+        }
+        return onPickStage == nil ? nil : "Zen: tap any stop to start there"
+    }
+
     // MARK: Stops
 
     private func stopView(_ index: Int, at point: CGPoint, in size: CGSize) -> some View {
         let stop = Self.stops[index]
-        let isLocked = index >= AdventureStage.all.count
-        let isCleared = index < voyage.to && !isLocked
+        // Stages actually beaten: not ones a zen-mode run skipped past.
+        let isCleared = voyage.from.map { index <= $0 } ?? false
         let isTarget = index == voyage.to
         let labelOnRight = point.x < size.width / 2
         let ring: Color = isCleared ? Self.teal : (isTarget ? Self.gold : Color("Foam").opacity(0.35))
@@ -124,20 +143,14 @@ struct VoyageChart: View {
         let medallion = ZStack {
             Circle()
                 .fill(Color("Abyss").opacity(0.75))
-            if let icon = stop.icon {
-                icon
-                    .resizable()
-                    .scaledToFit()
-                    .padding(8)
-                    .saturation(isCleared ? 0.2 : 1)
-                    .opacity(isCleared ? 0.55 : 1)
-            } else {
-                Text("?")
-                    .font(.custom("Cinzel", size: 26).weight(.semibold))
-                    .foregroundStyle(Color("Foam").opacity(0.5))
-            }
+            stop.icon
+                .resizable()
+                .scaledToFit()
+                .padding(8)
+                .saturation(isCleared ? 0.2 : 1)
+                .opacity(isCleared ? 0.55 : 1)
             Circle()
-                .strokeBorder(ring, style: StrokeStyle(lineWidth: isTarget ? 2.5 : 1.5, dash: isLocked ? [3, 5] : []))
+                .strokeBorder(ring, lineWidth: isTarget ? 2.5 : 1.5)
                 .shadow(color: ring.opacity(isTarget ? (isPulsing ? 0.9 : 0.3) : 0), radius: 8)
             if isCleared {
                 Image(systemName: "checkmark.circle.fill")
@@ -152,13 +165,11 @@ struct VoyageChart: View {
         let label = VStack(alignment: labelOnRight ? .leading : .trailing, spacing: 2) {
             Text(stop.name)
                 .font(.custom("Cinzel", size: 17).weight(.semibold))
-                .foregroundStyle(Color("Foam").opacity(isLocked ? 0.55 : 1))
-            if let boss = stop.bossName {
-                Text(boss)
-                    .font(.custom("Work Sans", size: 11).weight(.semibold))
-                    .tracking(2)
-                    .foregroundStyle(Color(red: 1.0, green: 0.4, blue: 0.4).opacity(isCleared ? 0.5 : 0.9))
-            }
+                .foregroundStyle(Color("Foam"))
+            Text(stop.bossName)
+                .font(.custom("Work Sans", size: 11).weight(.semibold))
+                .tracking(2)
+                .foregroundStyle(Color(red: 1.0, green: 0.4, blue: 0.4).opacity(isCleared ? 0.5 : 0.9))
             Text("\(stop.depth.formatted()) m")
                 .font(.custom("Work Sans", size: 11))
                 .foregroundStyle(Color("Foam").opacity(0.55))
@@ -181,12 +192,18 @@ struct VoyageChart: View {
                 medallion
             }
         }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onPickStage?(index)
+        }
         // Centered on the medallion, wherever the label sits.
         .offset(x: labelOnRight ? 96 : -96)
         .position(point)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(stop.name)
-        .accessibilityValue(isCleared ? "Cleared" : (isTarget ? "Next: \(stop.hint)" : (isLocked ? "Locked" : "Ahead")))
+        .accessibilityValue(isCleared ? "Cleared" : (isTarget ? "Next: \(stop.hint)" : "Ahead"))
+        .accessibilityAddTraits(onPickStage == nil ? [] : .isButton)
+        .accessibilityHint(onPickStage == nil ? "" : "Starts the run here")
     }
 
     @ViewBuilder private var buttons: some View {
@@ -230,8 +247,9 @@ struct VoyageChart: View {
         }
     }
 
-    /// A stage's boss, from its game art: the kraken's body, the moray's head.
-    private static func icon(forStage index: Int) -> Image? {
+    /// A stage's boss, from its game art: the kraken's body, the moray's head, the
+    /// galleon.
+    private static func icon(forStage index: Int) -> Image {
         let cellSize: CGFloat = 24
         let texture: SKTexture
         switch AdventureStage.all[index].boss {
@@ -239,6 +257,8 @@ struct VoyageChart: View {
             texture = SpriteArt.krakenBody(cellSize: cellSize)
         case .moray:
             texture = SpriteArt.morayHead(cellSize: cellSize)
+        case .galleon:
+            texture = SpriteArt.galleon(cellSize: cellSize)
         }
         return Image(decorative: texture.cgImage(), scale: 1)
     }
