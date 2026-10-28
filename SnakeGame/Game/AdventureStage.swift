@@ -110,9 +110,9 @@ struct AdventureStage {
         sky: AdventureMap.sky(in: AdventureMap.shallows),
         snakeStart: GridPoint(x: 35, y: 6),
         barrels: [GridPoint(x: 13, y: 14), GridPoint(x: 56, y: 14)],
-        // In columns clear all the way to the surface, so each can be rolled up
-        // as soon as the galleon is over it.
-        cannonballs: [GridPoint(x: 21, y: 8), GridPoint(x: 48, y: 8), GridPoint(x: 39, y: 13)],
+        // Just one to start, in a column clear all the way to the surface, so the
+        // trick can be tried; after that it's the galleon's own shot.
+        cannonballs: [GridPoint(x: 21, y: 8)],
         startingMines: 1,
         boss: .galleon(column: 35)
     )

@@ -38,9 +38,11 @@ final class GameManager {
     /// hull, the moray): seconds until each hits, where, and whom
     /// (`updateCannonHits`).
     private var cannonHits: [(timeLeft: TimeInterval, point: CGPoint, target: Boss)] = []
-    /// The most loose cannonballs the galleon's shot leaves lying around; past
-    /// this, its shot breaks up where it lands.
-    private let maxLooseCannonballs = 6
+    /// How much of the galleon's shot comes to rest as cannonballs: about half of
+    /// it (the rest breaks up where it lands), and never more than this many lying
+    /// around at once. Kept scarce, so the fight takes a while.
+    private let shotKeepsBallChance = 0.5
+    private let maxLooseCannonballs = 2
 
     /// Adventure: seconds left of the beaten boss's send-off before the stage is
     /// reported cleared (the game plays on meanwhile). Nil otherwise.
@@ -1134,9 +1136,9 @@ final class GameManager {
 
     /// A cannon shot landing: the head anywhere in its 3x3 patch costs a life (and
     /// bomb-eater doesn't help: it isn't a bomb), and bombs there go off as they
-    /// would in a sensor's blast. Then the ball comes to rest where it fell, a
-    /// cannonball like any other, if the cell's clear and there aren't already
-    /// plenty lying around.
+    /// would in a sensor's blast. Then the ball may come to rest where it fell, a
+    /// cannonball like any other: about half the time (`shotKeepsBallChance`), if
+    /// the cell's clear and there aren't already `maxLooseCannonballs` lying around.
     private func resolveCannonShot(_ shot: CannonShot) {
         let cell = shot.target
         onJolt?(.explosion(GridGeometry.position(for: cell, cellSize: cellSize, origin: origin)))
@@ -1147,7 +1149,8 @@ final class GameManager {
             setOffBombs(in: [cell] + GameManager.vicinity(of: cell, columns: columns, rows: rows))
         }
 
-        let keepsBall = !isGameOver && cannonballs.count < maxLooseCannonballs && isClearForCannonball(cell)
+        let keepsBall = !isGameOver && Double.random(in: 0..<1) < shotKeepsBallChance
+            && cannonballs.count < maxLooseCannonballs && isClearForCannonball(cell)
         shot.settle(keepingBall: keepsBall)
         guard keepsBall else { return }
         let ball = Cannonball(position: cell, cellSize: cellSize, origin: origin)
